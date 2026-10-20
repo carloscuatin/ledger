@@ -9,7 +9,7 @@ import com.tngtech.archunit.lang.ArchRule;
 
 /**
  * The domain is plain Java; use cases may only borrow Spring's transaction boundary. Rules allow
- * empty layers so the build stays green before the first domain class exists.
+ * empty layers because a module does not need to have every layer.
  */
 @AnalyzeClasses(packages = "com.carloscuatin.ledgerapp", importOptions = ImportOption.DoNotIncludeTests.class)
 class LayersTest {
