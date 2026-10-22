@@ -29,6 +29,7 @@ class MoneyTest {
         var currency = Currency.getInstance(code);
 
         assertThatThrownBy(() -> new Money(1, currency)).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> Money.parse("10", currency)).isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test
@@ -59,7 +60,7 @@ class MoneyTest {
         var jpy = Currency.getInstance("JPY");
         var money = Money.zero(jpy);
 
-        assertThat(money.minorUnits()).isEqualTo(0);
+        assertThat(money.minorUnits()).isZero();
         assertThat(money.currency()).isEqualTo(jpy);
     }
 
@@ -68,8 +69,7 @@ class MoneyTest {
         var money = new Money(15000, COP);
         var other = new Money(15000, USD);
 
-        assertThat(money).isEqualTo(new Money(15000, COP));
-        assertThat(money).isNotEqualTo(other);
+        assertThat(money).isEqualTo(new Money(15000, COP)).isNotEqualTo(other);
     }
 
     @Test
@@ -79,5 +79,61 @@ class MoneyTest {
 
         assertThat(mismatch).isInstanceOf(DomainException.class).isInstanceOf(RuntimeException.class);
         assertThat(invalid).isInstanceOf(DomainException.class).isInstanceOf(RuntimeException.class);
+    }
+
+    @ParameterizedTest
+    @CsvSource({
+        "150000.00, COP, 15000000",
+        "150000, COP, 15000000",
+        "10.0, COP, 1000",
+        "10.00, COP, 1000",
+        "100, JPY, 100",
+        "1.234, BHD, 1234",
+        "010, COP, 1000",
+        "-0, COP, 0",
+        "-0.00, COP, 0",
+        "-150.00, COP, -15000",
+        "92233720368547758.07, COP, 9223372036854775807"
+    })
+    void validAmountsAreParsed(String text, String currencyCode, long expectedMinorUnits) {
+        var currency = Currency.getInstance(currencyCode);
+        var money = Money.parse(text, currency);
+
+        assertThat(money.minorUnits()).isEqualTo(expectedMinorUnits);
+        assertThat(money.currency()).isEqualTo(currency);
+    }
+
+    @Test
+    void parsedAndMinorUnitsAreTheSameMoney() {
+        var money = Money.parse("150000.00", COP);
+        var other = Money.ofMinor(15000000, COP);
+
+        assertThat(money).isEqualTo(other);
+    }
+
+    @ParameterizedTest
+    @CsvSource({"1.005, COP", "1.5, JPY"})
+    void amountsWithMoreDecimalsThanTheCurrencyAreRejected(String text, String currencyCode) {
+        var currency = Currency.getInstance(currencyCode);
+
+        assertThatThrownBy(() -> Money.parse(text, currency)).isInstanceOf(InvalidAmountException.class);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"1E+5", "+10", "1,000.00", " 10", "", "10.", ".5", "--1", "10\n", "\u0661\u0660"})
+    void malformedAmountsAreRejected(String text) {
+        assertThatThrownBy(() -> Money.parse(text, COP)).isInstanceOf(InvalidAmountException.class);
+    }
+
+    @Test
+    void anAmountBeyondTheLongRangeIsRejected() {
+        assertThatThrownBy(() -> Money.parse("92233720368547758.08", COP)).isInstanceOf(InvalidAmountException.class);
+    }
+
+    @Test
+    void aNullAmountIsRejected() {
+        assertThatThrownBy(() -> Money.parse(null, COP))
+                .isInstanceOf(NullPointerException.class)
+                .hasMessage("amount");
     }
 }
