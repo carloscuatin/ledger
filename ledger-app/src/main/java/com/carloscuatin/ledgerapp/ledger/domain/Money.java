@@ -36,13 +36,27 @@ public record Money(long minorUnits, Currency currency) {
 
         try {
             return new Money(decimal.movePointRight(scale).longValueExact(), currency);
-        } catch (ArithmeticException e) {
+        } catch (ArithmeticException _) {
             throw new InvalidAmountException(amount, currency);
         }
     }
 
     public int scale() {
         return currency.getDefaultFractionDigits();
+    }
+
+    public Money plus(Money other) {
+        requireSameCurrency(other);
+        return new Money(Math.addExact(minorUnits, other.minorUnits), currency);
+    }
+
+    public Money minus(Money other) {
+        requireSameCurrency(other);
+        return new Money(Math.subtractExact(minorUnits, other.minorUnits), currency);
+    }
+
+    public Money negate() {
+        return new Money(Math.negateExact(minorUnits), currency);
     }
 
     private static int scaleOf(Currency currency) {
@@ -52,5 +66,11 @@ public record Money(long minorUnits, Currency currency) {
             throw new IllegalArgumentException("Currency without a scale: " + currency.getCurrencyCode());
         }
         return digits;
+    }
+
+    private void requireSameCurrency(Money other) {
+        if (!currency.equals(other.currency)) {
+            throw new CurrencyMismatchException(currency, other.currency);
+        }
     }
 }

@@ -136,4 +136,58 @@ class MoneyTest {
                 .isInstanceOf(NullPointerException.class)
                 .hasMessage("amount");
     }
+
+    @Test
+    void addingInTheSameCurrency() {
+        var sum = Money.parse("150000.00", COP).plus(Money.parse("0.50", COP));
+
+        assertThat(sum).isEqualTo(Money.ofMinor(15000050, COP));
+    }
+
+    @Test
+    void subtractingInTheSameCurrency() {
+        var difference = Money.parse("10.00", COP).minus(Money.parse("0.50", COP));
+
+        assertThat(difference).isEqualTo(Money.ofMinor(950, COP));
+    }
+
+    @Test
+    void operationAcrossCurrenciesIsRejected() {
+        var cop = Money.parse("150000.00", COP);
+        var usd = Money.parse("150000.00", USD);
+
+        assertThatThrownBy(() -> cop.plus(usd)).isInstanceOf(CurrencyMismatchException.class);
+        assertThatThrownBy(() -> cop.minus(usd)).isInstanceOf(CurrencyMismatchException.class);
+    }
+
+    @Test
+    void arithmeticOverflowIsASystemError() {
+        var max = Money.ofMinor(Long.MAX_VALUE, COP);
+        var min = Money.ofMinor(Long.MIN_VALUE, COP);
+        var one = Money.ofMinor(1, COP);
+
+        assertThatThrownBy(() -> max.plus(one))
+                .isInstanceOf(ArithmeticException.class)
+                .isNotInstanceOf(DomainException.class);
+        assertThatThrownBy(() -> min.minus(one))
+                .isInstanceOf(ArithmeticException.class)
+                .isNotInstanceOf(DomainException.class);
+    }
+
+    @Test
+    void negatingAnAmount() {
+        var money = Money.ofMinor(15000, COP);
+
+        assertThat(money.negate()).isEqualTo(Money.ofMinor(-15000, COP));
+        assertThat(money.negate().negate()).isEqualTo(money);
+    }
+
+    @Test
+    void negatingTheMinimumOverflows() {
+        var min = Money.ofMinor(Long.MIN_VALUE, COP);
+
+        assertThatThrownBy(() -> min.negate())
+                .isInstanceOf(ArithmeticException.class)
+                .isNotInstanceOf(DomainException.class);
+    }
 }
