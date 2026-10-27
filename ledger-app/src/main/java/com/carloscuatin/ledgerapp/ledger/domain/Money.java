@@ -1,6 +1,7 @@
 package com.carloscuatin.ledgerapp.ledger.domain;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.Currency;
 import java.util.Objects;
 
@@ -57,6 +58,14 @@ public record Money(long minorUnits, Currency currency) {
 
     public Money negate() {
         return new Money(Math.negateExact(minorUnits), currency);
+    }
+
+    public Money applyRate(BigDecimal rate) {
+        Objects.requireNonNull(rate, "rate");
+        var exact = BigDecimal.valueOf(minorUnits).multiply(rate);
+        var rounded = exact.setScale(0, RoundingMode.HALF_EVEN);
+
+        return new Money(rounded.longValueExact(), currency);
     }
 
     private static int scaleOf(Currency currency) {

@@ -3,6 +3,7 @@ package com.carloscuatin.ledgerapp.ledger.domain;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.math.BigDecimal;
 import java.util.Currency;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -186,8 +187,51 @@ class MoneyTest {
     void negatingTheMinimumOverflows() {
         var min = Money.ofMinor(Long.MIN_VALUE, COP);
 
-        assertThatThrownBy(() -> min.negate())
+        assertThatThrownBy(min::negate).isInstanceOf(ArithmeticException.class).isNotInstanceOf(DomainException.class);
+    }
+
+    @ParameterizedTest
+    @CsvSource({
+        "10001.00, COP, 0.015, 15002",
+        "6001.00, COP, 0.025, 15002",
+        "6001.40, COP, 0.025, 15004",
+        "-6001.00, COP, 0.025, -15002",
+        "-6001.40, COP, 0.025, -15004",
+        "100, JPY, 0.015, 2",
+        "300, JPY, 0.015, 4",
+        "1.235, BHD, 0.5, 618",
+        "10001.00, COP, 0, 0",
+        "10001.00, COP, -0.015, -15002"
+    })
+    void aRateRoundsHalfEvenToTheCurrencyScale(
+            String amount, String currencyCode, String rate, long expectedMinorUnits) {
+        var currency = Currency.getInstance(currencyCode);
+        var result = Money.parse(amount, currency).applyRate(new BigDecimal(rate));
+
+        assertThat(result).isEqualTo(Money.ofMinor(expectedMinorUnits, currency));
+    }
+
+    @Test
+    void aRateBuiltFromADoubleIsNotExact() {
+        assertThat(new BigDecimal(0.015)).isNotEqualByComparingTo(new BigDecimal("0.015"));
+    }
+
+    @Test
+    void aRateResultBeyondTheRangeIsASystemError() {
+        var max = Money.ofMinor(Long.MAX_VALUE, COP);
+        var rate = new BigDecimal("2");
+
+        assertThatThrownBy(() -> max.applyRate(rate))
                 .isInstanceOf(ArithmeticException.class)
                 .isNotInstanceOf(DomainException.class);
+    }
+
+    @Test
+    void aNullRateIsRejected() {
+        var zero = Money.zero(COP);
+
+        assertThatThrownBy(() -> zero.applyRate(null))
+                .isInstanceOf(NullPointerException.class)
+                .hasMessage("rate");
     }
 }
