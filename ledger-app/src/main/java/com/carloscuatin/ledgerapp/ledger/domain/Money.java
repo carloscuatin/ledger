@@ -68,6 +68,19 @@ public record Money(long minorUnits, Currency currency) {
         return new Money(rounded.longValueExact(), currency);
     }
 
+    public boolean isGreaterThanOrEqualTo(Money other) {
+        requireSameCurrency(other);
+        return minorUnits >= other.minorUnits;
+    }
+
+    public boolean isNegative() {
+        return minorUnits < 0;
+    }
+
+    public boolean isZero() {
+        return minorUnits == 0;
+    }
+
     private static int scaleOf(Currency currency) {
         Objects.requireNonNull(currency, "currency");
         int digits = currency.getDefaultFractionDigits();

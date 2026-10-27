@@ -234,4 +234,40 @@ class MoneyTest {
                 .isInstanceOf(NullPointerException.class)
                 .hasMessage("rate");
     }
+
+    @ParameterizedTest
+    @CsvSource({"9.99, true", "10.00, true", "10.01, false"})
+    void greaterThanOrEqualWithinACurrency(String otherAmount, boolean expected) {
+        var money = Money.parse("10.00", COP);
+        var other = Money.parse(otherAmount, COP);
+
+        assertThat(money.isGreaterThanOrEqualTo(other)).isEqualTo(expected);
+    }
+
+    @Test
+    void comparingAcrossCurrenciesIsRejected() {
+        var cop = Money.parse("1.00", COP);
+        var usd = Money.parse("1.00", USD);
+
+        assertThatThrownBy(() -> cop.isGreaterThanOrEqualTo(usd)).isInstanceOf(CurrencyMismatchException.class);
+    }
+
+    @ParameterizedTest
+    @CsvSource({"-1, true, false", "0, false, true", "1, false, false"})
+    void signPredicates(long minorUnits, boolean expectedNegative, boolean expectedZero) {
+        var money = Money.ofMinor(minorUnits, COP);
+
+        assertThat(money.isNegative()).isEqualTo(expectedNegative);
+        assertThat(money.isZero()).isEqualTo(expectedZero);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"-0", "-0.00"})
+    void negativeZeroIsZero(String text) {
+        var money = Money.parse(text, COP);
+
+        assertThat(money.isZero()).isTrue();
+        assertThat(money.isNegative()).isFalse();
+        assertThat(money).isEqualTo(Money.zero(COP));
+    }
 }
