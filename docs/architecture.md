@@ -5,8 +5,11 @@ Spring earns its place: money with ACID consistency, resumable batch jobs and OA
 
 ## Current status
 
-Scaffold only: `ledger-app` boots with Spring Modulith, and the build verifies module boundaries
-(`ModularityTest`) and layers (`LayersTest`). Phase 0 (plain Java domain) has not started.
+`ledger-app` boots with Spring Modulith, and the build verifies module boundaries
+(`ModularityTest`) and layers (`LayersTest`). Phase 0 (plain Java domain) has started: the `ledger`
+module has the `Money` value object (minor units with the currency scale, strict parsing, exact
+arithmetic, half-even rates, comparisons and plain decimal rendering) and its unchecked domain
+errors.
 
 ## Diagrams
 
