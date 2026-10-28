@@ -1,15 +1,150 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-	xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
-	<modelVersion>4.0.0</modelVersion>
-	<groupId>com.carloscuatin</groupId>
-	<artifactId>ledger</artifactId>
-	<version>0.0.1-SNAPSHOT</version>
-	<packaging>pom</packaging>
-	<name>ledger</name>
-	<description>Wallet ledger platform for multi-tenant fintechs</description>
+<project child.project.url.inherit.append.path="false" xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-parent</artifactId>
+        <version>4.1.1</version>
+        <relativePath/> <!-- lookup parent from repository -->
+    </parent>
+    <groupId>com.carloscuatin</groupId>
+    <artifactId>ledger</artifactId>
+    <version>0.0.1-SNAPSHOT</version>
+    <packaging>pom</packaging>
+    <name>ledger</name>
+    <description>Wallet ledger platform for multi-tenant fintechs</description>
+    <!-- The Spring Boot parent declares its own url, license, developers and scm: these entries
+         replace them so modules never publish Spring's metadata as their own. -->
+    <url>https://github.com/carloscuatin/ledger</url>
+    <licenses>
+        <license/>
+    </licenses>
+    <developers>
+        <developer>
+            <id>carloscuatin</id>
+            <name>Carlos Cuatin</name>
+            <url>https://github.com/carloscuatin</url>
+        </developer>
+    </developers>
+    <scm child.scm.connection.inherit.append.path="false" child.scm.developerConnection.inherit.append.path="false"
+            child.scm.url.inherit.append.path="false">
+        <connection>scm:git:https://github.com/carloscuatin/ledger.git</connection>
+        <developerConnection>scm:git:git@github.com:carloscuatin/ledger.git</developerConnection>
+        <url>https://github.com/carloscuatin/ledger</url>
+    </scm>
 
-	<modules>
-		<module>ledger-app</module>
-	</modules>
+    <modules>
+        <module>ledger-app</module>
+    </modules>
+
+    <properties>
+        <java.version>25</java.version>
+        <spring-modulith.version>2.1.1</spring-modulith.version>
+        <archunit.version>1.5.1</archunit.version>
+        <spotless.version>3.10.4</spotless.version>
+        <palantir-java-format.version>2.102.0</palantir-java-format.version>
+    </properties>
+
+    <dependencyManagement>
+        <dependencies>
+            <!-- Entries declared here win over the imported Modulith BOM. Managing archunit keeps the
+                 engine Modulith pulls in on the same version as archunit-junit5, so the architecture
+                 tests never run an engine and an API of different versions. -->
+            <dependency>
+                <groupId>com.tngtech.archunit</groupId>
+                <artifactId>archunit</artifactId>
+                <version>${archunit.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.tngtech.archunit</groupId>
+                <artifactId>archunit-junit5</artifactId>
+                <version>${archunit.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.springframework.modulith</groupId>
+                <artifactId>spring-modulith-bom</artifactId>
+                <version>${spring-modulith.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
+    <build>
+        <pluginManagement>
+            <plugins>
+                <plugin>
+                    <groupId>com.diffplug.spotless</groupId>
+                    <artifactId>spotless-maven-plugin</artifactId>
+                    <version>${spotless.version}</version>
+                    <configuration>
+                        <java>
+                            <palantirJavaFormat>
+                                <version>${palantir-java-format.version}</version>
+                            </palantirJavaFormat>
+                            <removeUnusedImports/>
+                        </java>
+                    </configuration>
+                    <executions>
+                        <execution>
+                            <goals>
+                                <goal>check</goal>
+                            </goals>
+                        </execution>
+                    </executions>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-enforcer-plugin</artifactId>
+                    <executions>
+                        <execution>
+                            <id>enforce</id>
+                            <phase>validate</phase>
+                            <goals>
+                                <goal>enforce</goal>
+                            </goals>
+                            <configuration>
+                                <rules>
+                                    <!-- Fails before compiling, with a clear message, instead of
+                                         javac's "invalid target release". -->
+                                    <requireJavaVersion>
+                                        <version>[25,)</version>
+                                        <message>ledger needs JDK 25 or newer. Run `sdk env` in the repository root to switch to the pinned JDK.</message>
+                                    </requireJavaVersion>
+                                </rules>
+                            </configuration>
+                        </execution>
+                    </executions>
+                </plugin>
+            </plugins>
+        </pluginManagement>
+        <plugins>
+            <plugin>
+                <groupId>com.diffplug.spotless</groupId>
+                <artifactId>spotless-maven-plugin</artifactId>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-enforcer-plugin</artifactId>
+            </plugin>
+        </plugins>
+    </build>
+
+    <profiles>
+        <!-- IDEs built on m2e (VS Code Java, Eclipse) set m2e.version: they compile into their own
+             folder so their background builds never leave stale classes for Maven. The relative
+             directory resolves against each module's basedir. -->
+        <profile>
+            <id>ide</id>
+            <activation>
+                <property>
+                    <name>m2e.version</name>
+                </property>
+            </activation>
+            <build>
+                <directory>target-ide</directory>
+            </build>
+        </profile>
+    </profiles>
 </project>
