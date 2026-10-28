@@ -38,6 +38,7 @@ class MoneyTest {
         assertThatThrownBy(() -> new Money(1, null)).isInstanceOf(NullPointerException.class);
         assertThatThrownBy(() -> Money.ofMinor(1, null)).isInstanceOf(NullPointerException.class);
         assertThatThrownBy(() -> Money.zero(null)).isInstanceOf(NullPointerException.class);
+        assertThatThrownBy(() -> Money.parse("1", null)).isInstanceOf(NullPointerException.class);
     }
 
     @Test
@@ -45,6 +46,7 @@ class MoneyTest {
         var money = new Money(-15000, COP);
 
         assertThat(money.minorUnits()).isEqualTo(-15000);
+        assertThat(money.isNegative()).isTrue();
     }
 
     @ParameterizedTest
@@ -63,6 +65,7 @@ class MoneyTest {
 
         assertThat(money.minorUnits()).isZero();
         assertThat(money.currency()).isEqualTo(jpy);
+        assertThat(money.isZero()).isTrue();
     }
 
     @Test
