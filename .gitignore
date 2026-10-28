@@ -1,4 +1,5 @@
 target/
+target-ide/
 .mvn/wrapper/maven-wrapper.jar
 
 .env*
@@ -6,5 +7,6 @@ target/
 
 .idea/
 *.iml
-.vscode/
+.vscode/*
+!.vscode/extensions.json
 .DS_Store
