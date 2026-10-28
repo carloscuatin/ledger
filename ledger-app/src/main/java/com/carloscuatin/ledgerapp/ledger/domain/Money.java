@@ -81,6 +81,15 @@ public record Money(long minorUnits, Currency currency) {
         return minorUnits == 0;
     }
 
+    public String toDecimalString() {
+        return BigDecimal.valueOf(minorUnits, scale()).toPlainString();
+    }
+
+    @Override
+    public String toString() {
+        return currency.getCurrencyCode() + " " + toDecimalString();
+    }
+
     private static int scaleOf(Currency currency) {
         Objects.requireNonNull(currency, "currency");
         int digits = currency.getDefaultFractionDigits();

@@ -270,4 +270,27 @@ class MoneyTest {
         assertThat(money.isNegative()).isFalse();
         assertThat(money).isEqualTo(Money.zero(COP));
     }
+
+    @ParameterizedTest
+    @CsvSource({
+        "15000000, COP, 150000.00",
+        "100, JPY, 100",
+        "1234, BHD, 1.234",
+        "-50, COP, -0.50",
+        "0, COP, 0.00",
+        "9223372036854775807, COP, 92233720368547758.07"
+    })
+    void decimalRepresentationHasExactlyTheCurrencyScale(long minorUnits, String currencyCode, String expected) {
+        var money = Money.ofMinor(minorUnits, Currency.getInstance(currencyCode));
+
+        assertThat(money.toDecimalString()).isEqualTo(expected);
+    }
+
+    @ParameterizedTest
+    @CsvSource({"15000000, COP, COP 150000.00", "-15000, COP, COP -150.00", "100, JPY, JPY 100"})
+    void readableRepresentationIsTheCodeAndTheDecimal(long minorUnits, String currencyCode, String expected) {
+        var money = Money.ofMinor(minorUnits, Currency.getInstance(currencyCode));
+
+        assertThat(money).hasToString(expected);
+    }
 }
