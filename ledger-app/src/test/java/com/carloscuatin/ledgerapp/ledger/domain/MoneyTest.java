@@ -116,7 +116,7 @@ class MoneyTest {
     }
 
     @ParameterizedTest
-    @CsvSource({"1.005, COP", "1.5, JPY"})
+    @CsvSource({"1.005, COP", "1.5, JPY", "1.000, COP", "1.0, JPY"})
     void amountsWithMoreDecimalsThanTheCurrencyAreRejected(String text, String currencyCode) {
         var currency = Currency.getInstance(currencyCode);
 
