@@ -1,2 +1,10 @@
+* text=auto eol=lf
 /mvnw text eol=lf
 *.cmd text eol=crlf
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.jar binary
+*.drawio text eol=lf -diff linguist-generated
