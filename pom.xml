@@ -142,7 +142,10 @@
                     <executions>
                         <!-- Only production code: a test is a caller outside the contract on purpose,
                              passing null to prove the boundary rejects it. Error Prone reaches javac
-                             internals through the exports in .mvn/jvm.config. -->
+                             internals through the exports in .mvn/jvm.config.
+                             These annotationProcessorPaths replace any a module declares for this
+                             execution, and javac does not discover processors on the classpath: a new
+                             annotation processor goes in this list, next to Error Prone and NullAway. -->
                         <execution>
                             <id>default-compile</id>
                             <configuration>

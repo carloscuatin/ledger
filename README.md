@@ -60,6 +60,10 @@ can pass `null` to prove a boundary rejects it, and `requireNonNull` stays at th
 values from unchecked callers. `LayersTest` fails when a package is missing its `@NullMarked`
 `package-info.java`, which would otherwise leave it out of NullAway silently.
 
+Error Prone and NullAway run as annotation processors of the parent's `default-compile` execution.
+A new annotation processor (such as `spring-boot-configuration-processor`) goes in that execution's
+`annotationProcessorPaths`: one declared in a module is ignored.
+
 ## Git hooks
 
 - `pre-commit` runs `./mvnw -q -B validate spotless:check` (a couple of seconds). On a format
