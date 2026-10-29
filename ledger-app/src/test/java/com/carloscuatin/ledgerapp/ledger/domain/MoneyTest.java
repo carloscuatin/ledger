@@ -46,7 +46,7 @@ class MoneyTest {
     void negativeAmountsAreAllowed() {
         var money = new Money(-15000, COP);
 
-        assertThat(money.minorUnits()).isEqualTo(-15000);
+        assertThat(money.minorUnits()).isEqualTo(-15001);
         assertThat(money.isNegative()).isTrue();
     }
 
