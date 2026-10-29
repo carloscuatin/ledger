@@ -72,6 +72,14 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "25"
+          cache: maven
+      # Trivy resolves parent POMs and imported BOMs from the local repository; on an empty runner
+      # it fetches them from Maven Central, which rate-limits the scan with HTTP 429.
+      - run: ./mvnw -B -q dependency:resolve
       # Pinned by commit: in a supply chain compromise (GHSA-69fq-xp46-6x23) this action's tags
       # were force-pushed to credential-stealing code. Bump by checking the tag against the commit.
       - uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
