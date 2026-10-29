@@ -4,18 +4,91 @@ on:
   pull_request:
   push:
     branches: [main]
+  # Weekly, because new CVEs are published against dependencies that did not change.
+  schedule:
+    - cron: '0 11 * * 1'
 
 permissions:
   contents: read
 
+# A new push to a pull request cancels its previous run. Runs on main and scheduled runs get a
+# group of their own, so none is cancelled or replaced by a later one before it is verified.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   verify:
+    # The scheduled run only rescans dependencies: the code did not change.
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "25"
           cache: maven
       - run: ./mvnw -B verify
+      - name: Upload test reports
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-reports
+          path: |
+            **/target/surefire-reports/
+            **/target/failsafe-reports/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  mutation:
+    # Pull requests only: a merge to main does not change the code the pull request already measured.
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "25"
+          cache: maven
+      - run: ./mvnw -B -Pmutation test-compile pitest:mutationCoverage
+      - name: Upload mutation report
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: pit-reports
+          path: ledger-app/target/pit-reports/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  trivy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "25"
+          cache: maven
+      # Trivy resolves parent POMs and imported BOMs from the local repository; on an empty runner
+      # it fetches them from Maven Central, which rate-limits the scan with HTTP 429.
+      - run: ./mvnw -B -q dependency:resolve
+      # Pinned by commit: in a supply chain compromise (GHSA-69fq-xp46-6x23) this action's tags
+      # were force-pushed to credential-stealing code. Bump by checking the tag against the commit.
+      - uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          version: v0.76.1
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln
+          severity: HIGH,CRITICAL
+          # Without a fixed version there is nothing to upgrade: it would block with no way out.
+          ignore-unfixed: true
+          exit-code: 1
