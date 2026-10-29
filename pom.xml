@@ -43,7 +43,7 @@
         <spring-modulith.version>2.1.1</spring-modulith.version>
         <archunit.version>1.5.1</archunit.version>
         <spotless.version>3.10.4</spotless.version>
-        <palantir-java-format.version>2.102.0</palantir-java-format.version>
+        <eclipse-jdt.version>4.41</eclipse-jdt.version>
     </properties>
 
     <dependencyManagement>
@@ -80,10 +80,19 @@
                     <version>${spotless.version}</version>
                     <configuration>
                         <java>
-                            <palantirJavaFormat>
-                                <version>${palantir-java-format.version}</version>
-                            </palantirJavaFormat>
+                            <!-- The same profile VS Code reads, so the editor and the gate format alike.
+                                 maven.multiModuleProjectDirectory is the folder holding .mvn/, which
+                                 resolves the file from the root and from any module. -->
+                            <eclipse>
+                                <version>${eclipse-jdt.version}</version>
+                                <file>${maven.multiModuleProjectDirectory}/eclipse-formatter.xml</file>
+                            </eclipse>
                             <removeUnusedImports/>
+                            <!-- The Eclipse formatter does not sort imports; this is VS Code's default
+                                 organize-imports order: static, java, javax, org, com, everything else. -->
+                            <importOrder>
+                                <order>\#,java,javax,org,com,</order>
+                            </importOrder>
                         </java>
                     </configuration>
                     <executions>
