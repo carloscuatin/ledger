@@ -4,12 +4,17 @@ on:
   pull_request:
   push:
     branches: [main]
+  # Weekly, because new CVEs are published against dependencies that did not change.
+  schedule:
+    - cron: '0 11 * * 1'
 
 permissions:
   contents: read
 
 jobs:
   verify:
+    # The scheduled run only rescans dependencies: the code did not change.
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -54,3 +59,22 @@ jobs:
           path: ledger-app/target/pit-reports/
           if-no-files-found: ignore
           retention-days: 7
+
+  trivy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      # Pinned by commit: in a supply chain compromise (GHSA-69fq-xp46-6x23) this action's tags
+      # were force-pushed to credential-stealing code. Bump by checking the tag against the commit.
+      - uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          version: v0.76.1
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln
+          severity: HIGH,CRITICAL
+          # Without a fixed version there is nothing to upgrade: it would block with no way out.
+          ignore-unfixed: true
+          exit-code: 1
