@@ -1,0 +1,27 @@
+#!/bin/sh
+# Rejects a commit message whose header is not a Conventional Commit of at most 100 characters.
+# Every commit of a branch reaches main as is through a merge commit, so each header stays in
+# the history.
+set -eu
+
+header=$(grep -v '^#' "$1" | head -n 1)
+
+# Headers git writes itself, and the ones rebase --autosquash consumes.
+case "$header" in
+    'Merge '* | 'Revert "'* | 'fixup! '* | 'squash! '*) exit 0 ;;
+esac
+
+if [ "${#header}" -gt 100 ]; then
+    echo "commit-msg: the header has ${#header} characters; the limit is 100." >&2
+    exit 1
+fi
+
+pattern='^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\([a-z0-9-]+\))?!?: .+'
+if ! printf '%s\n' "$header" | grep -Eq "$pattern"; then
+    echo "commit-msg: the header is not a Conventional Commit:" >&2
+    echo "  $header" >&2
+    echo "expected: type(scope): subject, with an optional lowercase scope and ! for a breaking change" >&2
+    echo "types: feat fix docs style refactor perf test build ci chore revert" >&2
+    echo "example: feat(ledger): reject transfers between different currencies" >&2
+    exit 1
+fi

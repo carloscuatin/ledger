@@ -1,0 +1,29 @@
+#!/bin/sh
+# Rejects a commit whose Java is not formatted or whose build setup is broken. It has to take
+# seconds: the full gate, ./mvnw clean verify, runs before the pull request and in CI.
+set -eu
+
+root=$(git rev-parse --show-toplevel)
+cd "$root"
+
+if [ -z "${JAVA_HOME:-}" ]; then
+    # A commit from an editor launched outside a shell (VS Code from the Dock) does not inherit
+    # the SDKMAN environment, so the JDK pinned in .sdkmanrc is looked up directly.
+    version=$(sed -n 's/^java=//p' .sdkmanrc | tr -d '[:space:]')
+    candidate="$HOME/.sdkman/candidates/java/$version"
+    if [ -n "$version" ] && [ -d "$candidate" ]; then
+        JAVA_HOME=$candidate
+        export JAVA_HOME
+    else
+        echo "pre-commit: JAVA_HOME is not set and the JDK pinned in .sdkmanrc ($version) is not installed." >&2
+        echo "pre-commit: run 'sdk env install' in $root, then commit again." >&2
+        exit 1
+    fi
+fi
+
+if ! ./mvnw -q -B validate spotless:check; then
+    echo "" >&2
+    echo "pre-commit: commit rejected. If spotless:check reported violations, run ./mvnw spotless:apply," >&2
+    echo "pre-commit: review and stage the result, then commit again." >&2
+    exit 1
+fi
