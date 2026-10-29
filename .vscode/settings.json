@@ -15,14 +15,5 @@
       "source.organizeImports": "explicit"
     }
   },
-  "java.compile.nullAnalysis.mode": "automatic",
-  "java.compile.nullAnalysis.nonnull": [
-    "org.jspecify.annotations.NonNull"
-  ],
-  "java.compile.nullAnalysis.nullable": [
-    "org.jspecify.annotations.Nullable"
-  ],
-  "java.compile.nullAnalysis.nonnullbydefault": [
-    "org.jspecify.annotations.NullMarked"
-  ]
+  "java.compile.nullAnalysis.mode": "disabled"
 }
