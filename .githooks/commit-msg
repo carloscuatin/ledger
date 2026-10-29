@@ -4,11 +4,13 @@
 # the history.
 set -eu
 
-header=$(grep -v '^#' "$1" | head -n 1)
+# The header is the first line that is neither a comment nor blank: with --cleanup=verbatim git
+# passes the message as written, leading blank lines included.
+header=$(grep -v -e '^#' -e '^[[:space:]]*$' "$1" | head -n 1)
 
 # Headers git writes itself, and the ones rebase --autosquash consumes.
 case "$header" in
-    'Merge '* | 'Revert "'* | 'fixup! '* | 'squash! '*) exit 0 ;;
+    'Merge '* | 'Revert "'* | 'Reapply "'* | 'fixup! '* | 'amend! '* | 'squash! '*) exit 0 ;;
 esac
 
 if [ "${#header}" -gt 100 ]; then
