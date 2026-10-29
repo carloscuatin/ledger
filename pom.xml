@@ -83,6 +83,12 @@
                     <artifactId>spotless-maven-plugin</artifactId>
                     <version>${spotless.version}</version>
                     <configuration>
+                        <!-- The index of already formatted files does not notice a change to
+                             eclipse-formatter.xml, so a profile change would pass unchecked. Checking
+                             every file each run costs a fraction of a second at this size. -->
+                        <upToDateChecking>
+                            <enabled>false</enabled>
+                        </upToDateChecking>
                         <java>
                             <!-- The same profile VS Code reads, so the editor and the gate format alike.
                                  maven.multiModuleProjectDirectory is the folder holding .mvn/, which

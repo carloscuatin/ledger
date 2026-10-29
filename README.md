@@ -46,8 +46,6 @@ Everything runs from the repository root; the root POM is the parent and aggrega
 ./mvnw -pl ledger-app spring-boot:run                    # run the application
 ```
 
-- Spotless skips files it already formatted. After editing `eclipse-formatter.xml`, run
-  `./mvnw clean spotless:apply` so every file is formatted again with the new profile.
 - The mutation report lands in `ledger-app/target/pit-reports/index.html`. The threshold is 100 %: a
   surviving mutant is a missing test. An equivalent mutant is excluded by method with
   `excludedMethods`, never by lowering the threshold.
