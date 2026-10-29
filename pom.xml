@@ -44,6 +44,8 @@
         <archunit.version>1.5.1</archunit.version>
         <spotless.version>3.10.4</spotless.version>
         <eclipse-jdt.version>4.41</eclipse-jdt.version>
+        <error-prone.version>2.51.0</error-prone.version>
+        <nullaway.version>0.14.3</nullaway.version>
     </properties>
 
     <dependencyManagement>
@@ -122,6 +124,37 @@
                                         <message>ledger needs JDK 25 or newer. Run `sdk env` in the repository root to switch to the pinned JDK.</message>
                                     </requireJavaVersion>
                                 </rules>
+                            </configuration>
+                        </execution>
+                    </executions>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-compiler-plugin</artifactId>
+                    <executions>
+                        <!-- Only production code: a test is a caller outside the contract on purpose,
+                             passing null to prove the boundary rejects it. Error Prone reaches javac
+                             internals through the exports in .mvn/jvm.config. -->
+                        <execution>
+                            <id>default-compile</id>
+                            <configuration>
+                                <compilerArgs>
+                                    <arg>-XDcompilePolicy=simple</arg>
+                                    <arg>--should-stop=ifError=FLOW</arg>
+                                    <arg>-Xplugin:ErrorProne -Xep:NullAway:ERROR -XepOpt:NullAway:OnlyNullMarked=true -XepOpt:NullAway:JSpecifyMode=true</arg>
+                                </compilerArgs>
+                                <annotationProcessorPaths>
+                                    <path>
+                                        <groupId>com.google.errorprone</groupId>
+                                        <artifactId>error_prone_core</artifactId>
+                                        <version>${error-prone.version}</version>
+                                    </path>
+                                    <path>
+                                        <groupId>com.uber.nullaway</groupId>
+                                        <artifactId>nullaway</artifactId>
+                                        <version>${nullaway.version}</version>
+                                    </path>
+                                </annotationProcessorPaths>
                             </configuration>
                         </execution>
                     </executions>
