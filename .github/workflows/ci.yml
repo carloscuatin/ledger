@@ -31,3 +31,26 @@ jobs:
             **/target/failsafe-reports/
           if-no-files-found: ignore
           retention-days: 7
+
+  mutation:
+    # Pull requests only: a merge to main does not change the code the pull request already measured.
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "25"
+          cache: maven
+      - run: ./mvnw -B -Pmutation test-compile pitest:mutationCoverage
+      - name: Upload mutation report
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: pit-reports
+          path: ledger-app/target/pit-reports/
+          if-no-files-found: ignore
+          retention-days: 7
