@@ -1,8 +1,18 @@
 {
   "java.format.settings.url": "eclipse-formatter.xml",
   "java.format.settings.profile": "ledger",
-  "java.completion.importOrder": ["#", "java", "javax", "org", "com", ""],
+  "java.completion.importOrder": [
+    "#",
+    "java",
+    "javax",
+    "org",
+    "com",
+    ""
+  ],
   "[java]": {
-    "editor.formatOnSave": true
+    "editor.formatOnSave": true,
+    "editor.codeActionsOnSave": {
+      "source.organizeImports": "explicit"
+    }
   }
 }
