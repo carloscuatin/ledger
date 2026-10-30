@@ -155,4 +155,27 @@ class JournalEntryTest {
                                 credit(WALLET, "100.00")),
                         "USD 1.00, COP -0.50"));
     }
+
+    @Test
+    void anOverflowWhileBalancingIsASystemError() {
+        var postings = List.of(
+                new Posting(CASH, Side.DEBIT, Money.ofMinor(Long.MAX_VALUE, COP)),
+                new Posting(CASH, Side.DEBIT, Money.ofMinor(1, COP)),
+                new Posting(WALLET, Side.CREDIT, Money.ofMinor(1, COP)));
+
+        assertThatThrownBy(() -> new JournalEntry(postings))
+                .isInstanceOf(ArithmeticException.class)
+                .isNotInstanceOf(DomainException.class);
+    }
+
+    @Test
+    void theNewErrorsShareTheDomainBaseType() {
+        var nonPositive = new NonPositiveAmountException(Money.zero(COP));
+        var tooFew = new TooFewPostingsException(1);
+        var unbalanced = new UnbalancedEntryException(List.of(Money.ofMinor(50, COP)));
+
+        assertThat(nonPositive).isInstanceOf(DomainException.class).isInstanceOf(RuntimeException.class);
+        assertThat(tooFew).isInstanceOf(DomainException.class).isInstanceOf(RuntimeException.class);
+        assertThat(unbalanced).isInstanceOf(DomainException.class).isInstanceOf(RuntimeException.class);
+    }
 }
