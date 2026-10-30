@@ -59,6 +59,7 @@ class JournalEntryTest {
 
         assertThatThrownBy(() -> postings.add(extra)).isInstanceOf(UnsupportedOperationException.class);
         assertThatThrownBy(() -> postings.remove(0)).isInstanceOf(UnsupportedOperationException.class);
+        assertThat(entry.postings()).hasSize(2);
     }
 
     @Test
@@ -116,10 +117,10 @@ class JournalEntryTest {
     @Test
     void eachCurrencyBalancesOnItsOwn() {
         var postings = List.of(
-                debit(CASH, "100.00"),
-                debit(CASH, "10.00", USD),
-                credit(WALLET, "100.00"),
-                credit(WALLET, "10.00", USD));
+                debit(CASH, "150000.00"),
+                credit(WALLET, "150000.00"),
+                debit(CASH, "40.00", USD),
+                credit(WALLET, "40.00", USD));
 
         assertThat(new JournalEntry(postings).postings()).containsExactlyElementsOf(postings);
     }
@@ -142,17 +143,17 @@ class JournalEntryTest {
                 Arguments.of(List.of(debit(CASH, "100", JPY), credit(WALLET, "99", JPY)), "JPY 1"),
                 Arguments.of(
                         List.of(
-                                debit(CASH, "100.00"),
-                                credit(WALLET, "100.00"),
+                                debit(CASH, "150000.00"),
+                                credit(WALLET, "150000.00"),
                                 debit(CASH, "10.00", USD),
                                 credit(WALLET, "9.00", USD)),
                         "USD 1.00"),
                 Arguments.of(
                         List.of(
                                 debit(CASH, "10.00", USD),
+                                debit(CASH, "149999.50"),
                                 credit(WALLET, "9.00", USD),
-                                debit(CASH, "99.50"),
-                                credit(WALLET, "100.00")),
+                                credit(WALLET, "150000.00")),
                         "USD 1.00, COP -0.50"));
     }
 
