@@ -1,5 +1,8 @@
 package com.carloscuatin.ledgerapp.ledger.domain;
 
+import java.util.ArrayList;
+import java.util.Currency;
+import java.util.LinkedHashMap;
 import java.util.List;
 
 /**
@@ -14,6 +17,22 @@ public record JournalEntry(List<Posting> postings) {
         postings = List.copyOf(postings);
         if (postings.size() < 2) {
             throw new TooFewPostingsException(postings.size());
+        }
+
+        // Insertion order keeps the error message in the order currencies first appear.
+        var netByCurrency = new LinkedHashMap<Currency, Money>();
+        for (var posting : postings) {
+            var signed = posting.signedAmount();
+            netByCurrency.merge(signed.currency(), signed, Money::plus);
+        }
+        var imbalances = new ArrayList<Money>();
+        for (var net : netByCurrency.values()) {
+            if (!net.isZero()) {
+                imbalances.add(net);
+            }
+        }
+        if (!imbalances.isEmpty()) {
+            throw new UnbalancedEntryException(imbalances);
         }
     }
 }

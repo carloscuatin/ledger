@@ -17,4 +17,12 @@ public record Posting(AccountId account, Side side, Money amount) {
             throw new NonPositiveAmountException(amount);
         }
     }
+
+    /** The amount with the sign of its side, so the postings of a balanced entry add up to zero. */
+    Money signedAmount() {
+        return switch (side) {
+            case DEBIT -> amount;
+            case CREDIT -> amount.negate();
+        };
+    }
 }

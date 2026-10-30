@@ -8,12 +8,18 @@ import java.util.Arrays;
 import java.util.Currency;
 import java.util.List;
 import java.util.UUID;
+import java.util.stream.Stream;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 
 class JournalEntryTest {
 
     private static final Currency COP = Currency.getInstance("COP");
+    private static final Currency USD = Currency.getInstance("USD");
+    private static final Currency JPY = Currency.getInstance("JPY");
     private static final AccountId CASH = new AccountId(UUID.randomUUID());
     private static final AccountId WALLET = new AccountId(UUID.randomUUID());
 
@@ -23,6 +29,14 @@ class JournalEntryTest {
 
     private static Posting credit(AccountId account, String amount) {
         return new Posting(account, Side.CREDIT, Money.parse(amount, COP));
+    }
+
+    private static Posting debit(AccountId account, String amount, Currency currency) {
+        return new Posting(account, Side.DEBIT, Money.parse(amount, currency));
+    }
+
+    private static Posting credit(AccountId account, String amount, Currency currency) {
+        return new Posting(account, Side.CREDIT, Money.parse(amount, currency));
     }
 
     @Test
@@ -82,5 +96,49 @@ class JournalEntryTest {
         assertThatThrownBy(() -> new JournalEntry(single))
                 .isInstanceOf(TooFewPostingsException.class)
                 .hasMessage("A journal entry needs at least two postings, got 1");
+    }
+
+    @Test
+    void aSimpleTwoPostingEntryBalances() {
+        var postings = List.of(debit(CASH, "150000.00"), credit(WALLET, "150000.00"));
+
+        assertThat(new JournalEntry(postings).postings()).containsExactlyElementsOf(postings);
+    }
+
+    @Test
+    void oneDebitAgainstTwoCreditsBalances() {
+        var fee = new AccountId(UUID.randomUUID());
+        var postings = List.of(debit(CASH, "10100.00"), credit(WALLET, "10000.00"), credit(fee, "100.00"));
+
+        assertThat(new JournalEntry(postings).postings()).containsExactlyElementsOf(postings);
+    }
+
+    @Test
+    void eachCurrencyBalancesOnItsOwn() {
+        var postings = List.of(
+                debit(CASH, "100.00"),
+                debit(CASH, "10.00", USD),
+                credit(WALLET, "100.00"),
+                credit(WALLET, "10.00", USD));
+
+        assertThat(new JournalEntry(postings).postings()).containsExactlyElementsOf(postings);
+    }
+
+    @ParameterizedTest
+    @MethodSource("unbalancedEntries")
+    void anEntryThatDoesNotBalanceIsRejected(List<Posting> postings, String imbalance) {
+        assertThatThrownBy(() -> new JournalEntry(postings))
+                .isInstanceOf(UnbalancedEntryException.class)
+                .hasMessage("Journal entry does not balance (debits minus credits): " + imbalance);
+    }
+
+    static Stream<Arguments> unbalancedEntries() {
+        return Stream.of(
+                Arguments.of(List.of(debit(CASH, "150000.00"), credit(WALLET, "149999.50")), "COP 0.50"),
+                Arguments.of(List.of(debit(CASH, "149999.50"), credit(WALLET, "150000.00")), "COP -0.50"),
+                Arguments.of(List.of(debit(CASH, "100.00"), debit(WALLET, "200.00")), "COP 300.00"),
+                Arguments.of(List.of(credit(CASH, "100.00"), credit(WALLET, "200.00")), "COP -300.00"),
+                Arguments.of(List.of(debit(CASH, "100.00"), credit(WALLET, "100.00", USD)), "COP 100.00, USD -100.00"),
+                Arguments.of(List.of(debit(CASH, "100", JPY), credit(WALLET, "99", JPY)), "JPY 1"));
     }
 }
