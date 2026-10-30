@@ -8,6 +8,7 @@ import java.util.UUID;
  * other identifier.
  */
 public record AccountId(UUID value) {
+
     public AccountId {
         Objects.requireNonNull(value, "value");
     }
