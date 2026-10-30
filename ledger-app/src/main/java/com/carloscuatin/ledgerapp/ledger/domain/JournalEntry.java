@@ -12,5 +12,8 @@ public record JournalEntry(List<Posting> postings) {
         // A copy, not a read-only view: a view would still follow later changes to the caller's list. The copy also
         // rejects a null list or a null posting.
         postings = List.copyOf(postings);
+        if (postings.size() < 2) {
+            throw new TooFewPostingsException(postings.size());
+        }
     }
 }

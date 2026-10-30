@@ -65,4 +65,22 @@ class JournalEntryTest {
         assertThatThrownBy(() -> new JournalEntry(null)).isInstanceOf(NullPointerException.class);
         assertThatThrownBy(() -> new JournalEntry(withANullPosting)).isInstanceOf(NullPointerException.class);
     }
+
+    @Test
+    void anEmptyEntryIsRejected() {
+        List<Posting> none = List.of();
+
+        assertThatThrownBy(() -> new JournalEntry(none))
+                .isInstanceOf(TooFewPostingsException.class)
+                .hasMessage("A journal entry needs at least two postings, got 0");
+    }
+
+    @Test
+    void aSinglePostingIsRejectedBeforeBalancing() {
+        var single = List.of(debit(CASH, "100.00"));
+
+        assertThatThrownBy(() -> new JournalEntry(single))
+                .isInstanceOf(TooFewPostingsException.class)
+                .hasMessage("A journal entry needs at least two postings, got 1");
+    }
 }
