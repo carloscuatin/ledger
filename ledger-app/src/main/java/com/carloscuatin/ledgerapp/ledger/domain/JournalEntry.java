@@ -1,9 +1,10 @@
 package com.carloscuatin.ledgerapp.ledger.domain;
 
-import java.util.ArrayList;
 import java.util.Currency;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 /**
  * A double-entry record of money moving between accounts. An entry never changes once created: a mistake is corrected
@@ -19,20 +20,20 @@ public record JournalEntry(List<Posting> postings) {
             throw new TooFewPostingsException(postings.size());
         }
 
-        // Insertion order keeps the error message in the order currencies first appear.
-        var netByCurrency = new LinkedHashMap<Currency, Money>();
-        for (var posting : postings) {
-            var signed = posting.signedAmount();
-            netByCurrency.merge(signed.currency(), signed, Money::plus);
-        }
-        var imbalances = new ArrayList<Money>();
-        for (var net : netByCurrency.values()) {
-            if (!net.isZero()) {
-                imbalances.add(net);
-            }
-        }
+        var imbalances = imbalances(postings);
         if (!imbalances.isEmpty()) {
             throw new UnbalancedEntryException(imbalances);
         }
+    }
+
+    /**
+     * The net of each currency that does not add up to zero. Summing within a currency means amounts in different
+     * currencies never offset each other, and insertion order keeps currencies in the order they first appear.
+     */
+    private static List<Money> imbalances(List<Posting> postings) {
+        Map<Currency, Money> netByCurrency = postings.stream()
+                .map(Posting::signedAmount)
+                .collect(Collectors.toMap(Money::currency, net -> net, Money::plus, LinkedHashMap::new));
+        return netByCurrency.values().stream().filter(net -> !net.isZero()).toList();
     }
 }

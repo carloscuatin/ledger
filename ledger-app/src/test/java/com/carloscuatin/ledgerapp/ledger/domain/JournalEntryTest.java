@@ -139,6 +139,20 @@ class JournalEntryTest {
                 Arguments.of(List.of(debit(CASH, "100.00"), debit(WALLET, "200.00")), "COP 300.00"),
                 Arguments.of(List.of(credit(CASH, "100.00"), credit(WALLET, "200.00")), "COP -300.00"),
                 Arguments.of(List.of(debit(CASH, "100.00"), credit(WALLET, "100.00", USD)), "COP 100.00, USD -100.00"),
-                Arguments.of(List.of(debit(CASH, "100", JPY), credit(WALLET, "99", JPY)), "JPY 1"));
+                Arguments.of(List.of(debit(CASH, "100", JPY), credit(WALLET, "99", JPY)), "JPY 1"),
+                Arguments.of(
+                        List.of(
+                                debit(CASH, "100.00"),
+                                credit(WALLET, "100.00"),
+                                debit(CASH, "10.00", USD),
+                                credit(WALLET, "9.00", USD)),
+                        "USD 1.00"),
+                Arguments.of(
+                        List.of(
+                                debit(CASH, "10.00", USD),
+                                credit(WALLET, "9.00", USD),
+                                debit(CASH, "99.50"),
+                                credit(WALLET, "100.00")),
+                        "USD 1.00, COP -0.50"));
     }
 }
