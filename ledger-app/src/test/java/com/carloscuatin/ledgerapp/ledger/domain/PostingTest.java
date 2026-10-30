@@ -12,16 +12,16 @@ import org.junit.jupiter.params.provider.CsvSource;
 
 class PostingTest {
     private static final Currency COP = Currency.getInstance("COP");
-    private static final AccountId ACCOUNT_ID = new AccountId(UUID.randomUUID());
+    private static final AccountId ACCOUNT = new AccountId(UUID.randomUUID());
 
     @Test
     void bothSidesKeepTheirAccountSideAndAmount() {
         var amount = Money.parse("150000.00", COP);
 
-        var debit = new Posting(ACCOUNT_ID, Side.DEBIT, amount);
-        var credit = new Posting(ACCOUNT_ID, Side.CREDIT, amount);
+        var debit = new Posting(ACCOUNT, Side.DEBIT, amount);
+        var credit = new Posting(ACCOUNT, Side.CREDIT, amount);
 
-        assertThat(debit.account()).isEqualTo(ACCOUNT_ID);
+        assertThat(debit.account()).isEqualTo(ACCOUNT);
         assertThat(debit.side()).isEqualTo(Side.DEBIT);
         assertThat(debit.amount()).isEqualTo(amount);
         assertThat(credit.side()).isEqualTo(Side.CREDIT);
@@ -30,7 +30,7 @@ class PostingTest {
 
     @Test
     void theSmallestPositiveAmountIsAccepted() {
-        var posting = new Posting(ACCOUNT_ID, Side.DEBIT, Money.ofMinor(1, COP));
+        var posting = new Posting(ACCOUNT, Side.DEBIT, Money.ofMinor(1, COP));
 
         assertThat(posting.amount().minorUnits()).isEqualTo(1);
     }
@@ -40,7 +40,7 @@ class PostingTest {
     void nonPositiveAmountsAreRejected(long minorUnits, String expectedMessage) {
         var amount = Money.ofMinor(minorUnits, COP);
 
-        assertThatThrownBy(() -> new Posting(ACCOUNT_ID, Side.DEBIT, amount))
+        assertThatThrownBy(() -> new Posting(ACCOUNT, Side.DEBIT, amount))
                 .isInstanceOf(NonPositiveAmountException.class)
                 .hasMessage(expectedMessage);
     }
@@ -50,8 +50,8 @@ class PostingTest {
         var amount = Money.ofMinor(1, COP);
 
         assertThatThrownBy(() -> new Posting(null, Side.DEBIT, amount)).isInstanceOf(NullPointerException.class);
-        assertThatThrownBy(() -> new Posting(ACCOUNT_ID, null, amount)).isInstanceOf(NullPointerException.class);
-        assertThatThrownBy(() -> new Posting(ACCOUNT_ID, Side.DEBIT, null))
+        assertThatThrownBy(() -> new Posting(ACCOUNT, null, amount)).isInstanceOf(NullPointerException.class);
+        assertThatThrownBy(() -> new Posting(ACCOUNT, Side.DEBIT, null))
                 .isInstanceOf(NullPointerException.class);
     }
 }
