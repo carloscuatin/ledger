@@ -8,6 +8,7 @@ import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
 class AccountIdTest {
+
     @Test
     void accountReferencesWithTheSameUuidAreEqual() {
         var uuid = UUID.randomUUID();

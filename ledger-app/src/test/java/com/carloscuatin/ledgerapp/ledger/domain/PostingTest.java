@@ -11,6 +11,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 
 class PostingTest {
+
     private static final Currency COP = Currency.getInstance("COP");
     private static final AccountId ACCOUNT = new AccountId(UUID.randomUUID());
 
