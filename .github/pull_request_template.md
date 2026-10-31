@@ -9,7 +9,3 @@
 ## Pending
 
 <!-- What is left for a later change, or "Nothing". -->
-
-## Spec
-
-<!-- Link to the OpenSpec change this pull request implements. -->

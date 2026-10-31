@@ -6,12 +6,15 @@ Spring earns its place: money with ACID consistency, resumable batch jobs and OA
 ## Current status
 
 `ledger-app` boots with Spring Modulith, and the build verifies module boundaries
-(`ModularityTest`) and layers (`LayersTest`). Phase 0 (plain Java domain) has started: the `ledger`
+(`ModularityTest`) and layers (`LayersTest`). Phase 0 (plain Java domain) is complete: the `ledger`
 module has the `Money` value object (minor units with the currency scale, strict parsing, exact
 arithmetic, half-even rates, comparisons and plain decimal rendering), postings (an account, a
-side and a positive amount) and the immutable `JournalEntry`, which needs at least two postings and
-rejects an entry that does not balance in some currency, all with unchecked domain errors. Entry
-identity, booking and value dates and `reversalOf` arrive with the change that first needs them.
+side and a positive amount), the immutable `JournalEntry`, which needs at least two postings and
+rejects an entry that does not balance in some currency, and the `Transfer` state machine: a
+sealed set of states (pending, posted, voided, expired) where only a hold can move, posting
+produces the journal entry, and a transfer of unknown state rejects invalid transitions. All of
+them raise unchecked domain errors. Identities, dates, `reversalOf`, hold deadlines, partial
+capture, direct transfers and fees arrive with the change that first needs them.
 
 ## Diagrams
 
