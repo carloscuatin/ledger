@@ -2,6 +2,7 @@ package com.carloscuatin.ledgerapp.ledger.domain;
 
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 
 /**
  * A hold: the money is reserved and waits to be posted, voided or expired.
@@ -29,5 +30,10 @@ public record PendingTransfer(TransferTerms terms) implements Transfer {
 
     public ExpiredTransfer expire() {
         return new ExpiredTransfer(terms);
+    }
+
+    @Override
+    public Optional<JournalEntry> journalEntry() {
+        return Optional.empty();
     }
 }

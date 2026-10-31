@@ -2,6 +2,7 @@ package com.carloscuatin.ledgerapp.ledger.domain;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.fail;
 
 import java.lang.reflect.Method;
 import java.util.Arrays;
@@ -125,6 +126,28 @@ class TransferTest {
                 Arguments.of(new PostedTransfer(TERMS, ENTRY), TransferStatus.POSTED),
                 Arguments.of(new VoidedTransfer(TERMS), TransferStatus.VOIDED),
                 Arguments.of(new ExpiredTransfer(TERMS), TransferStatus.EXPIRED));
+    }
+
+    @Test
+    void aPostedTransferExposesItsJournalEntry() {
+        Transfer transfer = new PendingTransfer(TERMS).post();
+
+        if (!(transfer instanceof PostedTransfer(TransferTerms(var source, var destination, var amount), var entry))) {
+            fail("posting a hold must produce a posted transfer, got " + transfer);
+            return;
+        }
+        assertThat(source).isEqualTo(SOURCE);
+        assertThat(destination).isEqualTo(DESTINATION);
+        assertThat(amount).isEqualTo(AMOUNT);
+        assertThat(transfer.journalEntry()).contains(entry);
+    }
+
+    @Test
+    void onlyAPostedTransferHasAJournalEntry() {
+        List<Transfer> withoutEntry = List.of(new PendingTransfer(TERMS), new VoidedTransfer(TERMS),
+                new ExpiredTransfer(TERMS));
+
+        assertThat(withoutEntry).allSatisfy(transfer -> assertThat(transfer.journalEntry()).isEmpty());
     }
 
     private static List<String> publicMethodNames(Class<?> type) {
