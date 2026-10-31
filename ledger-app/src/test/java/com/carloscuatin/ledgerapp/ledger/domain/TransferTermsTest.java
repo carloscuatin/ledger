@@ -56,7 +56,7 @@ class TransferTermsTest {
 
     @Test
     void twoReferencesToTheSameAccountAreTheSameAccount() {
-        var sameAccountAgain = new AccountId(SOURCE_ID);
+        var sameAccountAgain = new AccountId(UUID.fromString(SOURCE_ID.toString()));
         var amount = Money.ofMinor(100, COP);
 
         assertThatThrownBy(() -> new TransferTerms(SOURCE, sameAccountAgain, amount))
