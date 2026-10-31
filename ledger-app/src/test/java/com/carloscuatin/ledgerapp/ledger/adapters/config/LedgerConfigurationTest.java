@@ -4,10 +4,15 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.util.Currency;
+import java.util.Map;
 import java.util.UUID;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
+import org.springframework.context.ApplicationContextInitializer;
+import org.springframework.context.ConfigurableApplicationContext;
+import org.springframework.core.env.StandardEnvironment;
+import org.springframework.core.env.SystemEnvironmentPropertySource;
 
 import com.carloscuatin.ledgerapp.ledger.application.CreateTransfer;
 import com.carloscuatin.ledgerapp.ledger.domain.AccountId;
@@ -79,5 +84,22 @@ class LedgerConfigurationTest {
             assertThat(createTransfer.create(pesos).terms()).isEqualTo(pesos);
             assertThatThrownBy(() -> createTransfer.create(dollars)).isInstanceOf(CurrencyNotEnabledException.class);
         });
+    }
+
+    @Test
+    void anEnvironmentVariableBindsToTheProperty() {
+        runner.withInitializer(environmentVariables(Map.of("LEDGER_CURRENCIES", "COP,USD"))).run(context -> {
+            assertThat(context).hasNotFailed();
+            assertThat(context.getBean(LedgerProperties.class).currencies()).containsExactlyInAnyOrder(COP, USD);
+        });
+    }
+
+    /** Replaces the operating system variables the context sees, the way a container platform sets them. */
+    private static ApplicationContextInitializer<ConfigurableApplicationContext> environmentVariables(
+            Map<String, Object> variables) {
+        var name = StandardEnvironment.SYSTEM_ENVIRONMENT_PROPERTY_SOURCE_NAME;
+        return context -> context.getEnvironment()
+                .getPropertySources()
+                .replace(name, new SystemEnvironmentPropertySource(name, variables));
     }
 }
