@@ -1,7 +1,8 @@
 package com.carloscuatin.ledgerapp.ledger.domain;
 
 /**
- * A posting amount must be positive because its side already carries the direction of the movement.
+ * An amount that moves money must be positive: the direction of the movement is carried elsewhere, by the side of a
+ * posting or by the accounts of a transfer.
  */
 public class NonPositiveAmountException extends DomainException {
 

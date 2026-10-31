@@ -12,10 +12,7 @@ public record Posting(AccountId account, Side side, Money amount) {
         Objects.requireNonNull(account, "account");
         Objects.requireNonNull(side, "side");
         Objects.requireNonNull(amount, "amount");
-
-        if (amount.isZero() || amount.isNegative()) {
-            throw new NonPositiveAmountException(amount);
-        }
+        Amounts.requirePositive(amount);
     }
 
     /** The amount with the sign of its side, so the postings of a balanced entry add up to zero. */
