@@ -165,6 +165,12 @@ since 7.0.0, current in 7.1.1 and on `main`):
 Acceptance criterion: an integration test proves that an opaque token used without its DPoP proof,
 or with the wrong key, gets 401.
 
+## Decision records
+
+Each phase closes with a record of its decisions in [`docs/adr/`](adr/):
+
+- [1. Phase 0: a plain Java domain](adr/0001-phase-0-plain-java-domain.md)
+
 ## Definition of done
 
 Each criterion is an automated test in CI or a demonstrable live check.

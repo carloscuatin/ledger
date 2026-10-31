@@ -3,8 +3,8 @@
 Wallet ledger for multi-tenant fintechs: double-entry journal, two-phase transfers, daily close with
 Spring Batch and OAuth2 with the FAPI 2.0 profile. A learning project for Java and Spring Boot.
 
-Design and decisions: [`docs/architecture.md`](docs/architecture.md). Diagrams (C4):
-[`docs/diagrams/`](docs/diagrams/).
+Design and decisions: [`docs/architecture.md`](docs/architecture.md). Decision records per phase:
+[`docs/adr/`](docs/adr/). Diagrams (C4): [`docs/diagrams/`](docs/diagrams/).
 
 ## Requirements
 
