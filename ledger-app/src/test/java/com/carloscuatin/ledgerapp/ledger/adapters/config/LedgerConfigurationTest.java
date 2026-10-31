@@ -1,11 +1,19 @@
 package com.carloscuatin.ledgerapp.ledger.adapters.config;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.util.Currency;
+import java.util.UUID;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
+
+import com.carloscuatin.ledgerapp.ledger.application.CreateTransfer;
+import com.carloscuatin.ledgerapp.ledger.domain.AccountId;
+import com.carloscuatin.ledgerapp.ledger.domain.CurrencyNotEnabledException;
+import com.carloscuatin.ledgerapp.ledger.domain.Money;
+import com.carloscuatin.ledgerapp.ledger.domain.TransferTerms;
 
 class LedgerConfigurationTest {
 
@@ -56,5 +64,20 @@ class LedgerConfigurationTest {
                 .hasFailed()
                 .getFailure()
                 .hasStackTraceContaining("every enabled currency needs a scale"));
+    }
+
+    @Test
+    void theContainerBuildsTheUseCaseWithTheEnabledCurrencies() {
+        var source = new AccountId(UUID.fromString("00000000-0000-7000-8000-000000000001"));
+        var destination = new AccountId(UUID.fromString("00000000-0000-7000-8000-000000000002"));
+        var pesos = new TransferTerms(source, destination, Money.parse("150000.00", COP));
+        var dollars = new TransferTerms(source, destination, Money.parse("100.00", USD));
+
+        runner.withPropertyValues("ledger.currencies=COP").run(context -> {
+            assertThat(context).hasSingleBean(CreateTransfer.class);
+            var createTransfer = context.getBean(CreateTransfer.class);
+            assertThat(createTransfer.create(pesos).terms()).isEqualTo(pesos);
+            assertThatThrownBy(() -> createTransfer.create(dollars)).isInstanceOf(CurrencyNotEnabledException.class);
+        });
     }
 }
