@@ -1,5 +1,6 @@
 package com.carloscuatin.ledgerapp.ledger.domain;
 
+import java.util.Objects;
 import java.util.Optional;
 
 /**
@@ -23,4 +24,21 @@ public sealed interface Transfer permits PendingTransfer, PostedTransfer, Voided
 
     /** The journal entry that moved the money, present only once the transfer is posted. */
     Optional<JournalEntry> journalEntry();
+
+    /**
+     * Applies an action to a transfer whose state is only known at run time, such as one loaded from storage. Only a
+     * hold can move; any other state rejects every action.
+     */
+    default Transfer apply(TransferAction action) {
+        // Checked first: otherwise only a hold would reject a null action, since only a hold reaches the switch.
+        Objects.requireNonNull(action, "action");
+        if (this instanceof PendingTransfer pending) {
+            return switch (action) {
+                case POST -> pending.post();
+                case VOID -> pending.voidHold();
+                case EXPIRE -> pending.expire();
+            };
+        }
+        throw new InvalidTransitionException(action, status());
+    }
 }

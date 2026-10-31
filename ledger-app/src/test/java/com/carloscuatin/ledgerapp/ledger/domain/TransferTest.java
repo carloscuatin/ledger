@@ -151,6 +151,64 @@ class TransferTest {
         assertThat(withoutEntry).hasSize(3).allSatisfy(transfer -> assertThat(transfer.journalEntry()).isEmpty());
     }
 
+    @Test
+    void applyingAnActionToAHoldReachesItsState() {
+        Transfer pending = new PendingTransfer(TERMS);
+
+        assertThat(pending.apply(TransferAction.POST)).isEqualTo(new PendingTransfer(TERMS).post());
+        assertThat(pending.apply(TransferAction.VOID)).isEqualTo(new VoidedTransfer(TERMS));
+        assertThat(pending.apply(TransferAction.EXPIRE)).isEqualTo(new ExpiredTransfer(TERMS));
+    }
+
+    @ParameterizedTest
+    @MethodSource("finalStatesAndActions")
+    void aFinalStateRejectsEveryAction(Transfer transfer, TransferAction action, String expectedMessage) {
+        assertThatThrownBy(() -> transfer.apply(action))
+                .isInstanceOf(InvalidTransitionException.class)
+                .hasMessage(expectedMessage);
+    }
+
+    static Stream<Arguments> finalStatesAndActions() {
+        return Stream.of(
+                Arguments.of(new PostedTransfer(TERMS, ENTRY), TransferAction.POST,
+                        "Cannot POST a transfer that is POSTED"),
+                Arguments.of(new PostedTransfer(TERMS, ENTRY), TransferAction.VOID,
+                        "Cannot VOID a transfer that is POSTED"),
+                Arguments.of(
+                        new PostedTransfer(TERMS, ENTRY), TransferAction.EXPIRE,
+                        "Cannot EXPIRE a transfer that is POSTED"),
+                Arguments.of(new VoidedTransfer(TERMS), TransferAction.POST, "Cannot POST a transfer that is VOIDED"),
+                Arguments.of(new VoidedTransfer(TERMS), TransferAction.VOID, "Cannot VOID a transfer that is VOIDED"),
+                Arguments.of(new VoidedTransfer(TERMS), TransferAction.EXPIRE,
+                        "Cannot EXPIRE a transfer that is VOIDED"),
+                Arguments.of(new ExpiredTransfer(TERMS), TransferAction.POST, "Cannot POST a transfer that is EXPIRED"),
+                Arguments.of(new ExpiredTransfer(TERMS), TransferAction.VOID, "Cannot VOID a transfer that is EXPIRED"),
+                Arguments.of(
+                        new ExpiredTransfer(TERMS), TransferAction.EXPIRE, "Cannot EXPIRE a transfer that is EXPIRED"));
+    }
+
+    @Test
+    void aNullActionIsRejectedInEveryState() {
+        List<Transfer> states = List.of(
+                new PendingTransfer(TERMS),
+                new PostedTransfer(TERMS, ENTRY),
+                new VoidedTransfer(TERMS),
+                new ExpiredTransfer(TERMS));
+
+        assertThat(states).hasSize(4).allSatisfy(transfer -> assertThatThrownBy(() -> transfer.apply(null))
+                .isInstanceOf(NullPointerException.class)
+                .hasMessage("action"));
+    }
+
+    @Test
+    void theNewErrorsShareTheDomainBaseType() {
+        var sameAccount = new SameAccountTransferException(SOURCE);
+        var invalidTransition = new InvalidTransitionException(TransferAction.POST, TransferStatus.POSTED);
+
+        assertThat(sameAccount).isInstanceOf(DomainException.class).isInstanceOf(RuntimeException.class);
+        assertThat(invalidTransition).isInstanceOf(DomainException.class).isInstanceOf(RuntimeException.class);
+    }
+
     private static List<String> publicMethodNames(Class<?> type) {
         return Arrays.stream(type.getMethods()).map(Method::getName).toList();
     }
