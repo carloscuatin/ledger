@@ -184,14 +184,17 @@
                         </dependency>
                     </dependencies>
                     <configuration>
-                        <!-- The pattern reaches the domain of every Modulith module. Any surviving
-                             mutant is a missing test: an equivalent one is excluded by method with
-                             excludedMethods, never by lowering the threshold. -->
+                        <!-- The patterns reach the domain and the use cases of every Modulith module;
+                             adapters and configuration stay out. Any surviving mutant is a missing test,
+                             and one no test can kill is removed by changing the shape of the code, never
+                             by excluding it or lowering the threshold. -->
                         <targetClasses>
                             <param>com.carloscuatin.ledgerapp.*.domain.*</param>
+                            <param>com.carloscuatin.ledgerapp.*.application.*</param>
                         </targetClasses>
                         <targetTests>
                             <param>com.carloscuatin.ledgerapp.*.domain.*</param>
+                            <param>com.carloscuatin.ledgerapp.*.application.*</param>
                         </targetTests>
                         <mutators>
                             <mutator>STRONGER</mutator>
