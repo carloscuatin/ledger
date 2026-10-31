@@ -110,6 +110,7 @@ class TransferTest {
         assertThat(publicMethodNames(PendingTransfer.class)).containsAll(transitions);
         for (var terminal : List.of(PostedTransfer.class, VoidedTransfer.class, ExpiredTransfer.class)) {
             assertThat(publicMethodNames(terminal)).as(terminal.getSimpleName())
+                    .contains("terms", "journalEntry")
                     .doesNotContainAnyElementsOf(transitions);
         }
     }
@@ -147,7 +148,7 @@ class TransferTest {
         List<Transfer> withoutEntry = List.of(new PendingTransfer(TERMS), new VoidedTransfer(TERMS),
                 new ExpiredTransfer(TERMS));
 
-        assertThat(withoutEntry).allSatisfy(transfer -> assertThat(transfer.journalEntry()).isEmpty());
+        assertThat(withoutEntry).hasSize(3).allSatisfy(transfer -> assertThat(transfer.journalEntry()).isEmpty());
     }
 
     private static List<String> publicMethodNames(Class<?> type) {
