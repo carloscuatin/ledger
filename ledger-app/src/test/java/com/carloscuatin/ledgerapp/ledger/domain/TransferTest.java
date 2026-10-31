@@ -8,8 +8,12 @@ import java.util.Arrays;
 import java.util.Currency;
 import java.util.List;
 import java.util.UUID;
+import java.util.stream.Stream;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 
 class TransferTest {
 
@@ -107,6 +111,20 @@ class TransferTest {
             assertThat(publicMethodNames(terminal)).as(terminal.getSimpleName())
                     .doesNotContainAnyElementsOf(transitions);
         }
+    }
+
+    @ParameterizedTest
+    @MethodSource("statesAndTheirStatus")
+    void everyStateReportsItsStatus(Transfer transfer, TransferStatus expected) {
+        assertThat(transfer.status()).isEqualTo(expected);
+    }
+
+    static Stream<Arguments> statesAndTheirStatus() {
+        return Stream.of(
+                Arguments.of(new PendingTransfer(TERMS), TransferStatus.PENDING),
+                Arguments.of(new PostedTransfer(TERMS, ENTRY), TransferStatus.POSTED),
+                Arguments.of(new VoidedTransfer(TERMS), TransferStatus.VOIDED),
+                Arguments.of(new ExpiredTransfer(TERMS), TransferStatus.EXPIRED));
     }
 
     private static List<String> publicMethodNames(Class<?> type) {
