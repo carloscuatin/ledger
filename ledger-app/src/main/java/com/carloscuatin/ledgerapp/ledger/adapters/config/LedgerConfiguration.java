@@ -3,6 +3,7 @@ package com.carloscuatin.ledgerapp.ledger.adapters.config;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Profile;
 
 import com.carloscuatin.ledgerapp.ledger.application.CreateTransfer;
 import com.carloscuatin.ledgerapp.ledger.application.IdGenerator;
@@ -12,6 +13,7 @@ import com.carloscuatin.ledgerapp.ledger.application.IdGenerator;
  * from the settings and ports they need.
  */
 @Configuration(proxyBeanMethods = false)
+@Profile("!migrate")
 @EnableConfigurationProperties(LedgerProperties.class)
 class LedgerConfiguration {
 
