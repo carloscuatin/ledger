@@ -15,6 +15,7 @@ import com.carloscuatin.ledgerapp.ledger.domain.CurrencyNotEnabledException;
 import com.carloscuatin.ledgerapp.ledger.domain.DomainException;
 import com.carloscuatin.ledgerapp.ledger.domain.Money;
 import com.carloscuatin.ledgerapp.ledger.domain.PendingTransfer;
+import com.carloscuatin.ledgerapp.ledger.domain.TransferStatus;
 import com.carloscuatin.ledgerapp.ledger.domain.TransferTerms;
 
 class CreateTransferTest {
@@ -35,6 +36,7 @@ class CreateTransferTest {
 
         PendingTransfer hold = createTransfer.create(terms);
 
+        assertThat(hold.status()).isEqualTo(TransferStatus.PENDING);
         assertThat(hold.terms()).isEqualTo(terms);
     }
 
