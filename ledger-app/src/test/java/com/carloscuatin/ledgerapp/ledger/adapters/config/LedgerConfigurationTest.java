@@ -38,15 +38,17 @@ class LedgerConfigurationTest {
 
     @Test
     void startupFailsWithoutTheProperty() {
-        runner.run(
-                context -> assertThat(context).hasFailed().getFailure().rootCause().hasMessageContaining("currencies"));
+        runner.withInitializer(environmentVariables(Map.of())).run(context -> assertThat(context)
+                .hasFailed()
+                .getFailure()
+                .hasStackTraceContaining("ledger.currencies"));
     }
 
     @Test
     void startupFailsWithAnEmptyProperty() {
         runner.withPropertyValues("ledger.currencies=")
-                .run(context -> assertThat(context).hasFailed().getFailure().rootCause()
-                        .hasMessageContaining("currencies"));
+                .run(context -> assertThat(context).hasFailed().getFailure()
+                        .hasStackTraceContaining("ledger.currencies"));
     }
 
     @Test
@@ -68,7 +70,13 @@ class LedgerConfigurationTest {
         runner.withPropertyValues("ledger.currencies=COP,XAU").run(context -> assertThat(context)
                 .hasFailed()
                 .getFailure()
-                .hasStackTraceContaining("every enabled currency needs a scale"));
+                .hasStackTraceContaining("every enabled currency needs a scale")
+                .hasStackTraceContaining("ledger.currencies"));
+    }
+
+    @Test
+    void currenciesWithoutDecimalsHaveAScale() {
+        runner.withPropertyValues("ledger.currencies=JPY,BHD").run(context -> assertThat(context).hasNotFailed());
     }
 
     @Test
@@ -83,6 +91,18 @@ class LedgerConfigurationTest {
             var createTransfer = context.getBean(CreateTransfer.class);
             assertThat(createTransfer.create(pesos).terms()).isEqualTo(pesos);
             assertThatThrownBy(() -> createTransfer.create(dollars)).isInstanceOf(CurrencyNotEnabledException.class);
+        });
+    }
+
+    @Test
+    void enablingACurrencyIsOnlyConfiguration() {
+        var source = new AccountId(UUID.fromString("00000000-0000-7000-8000-000000000001"));
+        var destination = new AccountId(UUID.fromString("00000000-0000-7000-8000-000000000002"));
+        var dollars = new TransferTerms(source, destination, Money.parse("100.00", USD));
+
+        runner.withPropertyValues("ledger.currencies=COP,USD").run(context -> {
+            var createTransfer = context.getBean(CreateTransfer.class);
+            assertThat(createTransfer.create(dollars).terms()).isEqualTo(dollars);
         });
     }
 
