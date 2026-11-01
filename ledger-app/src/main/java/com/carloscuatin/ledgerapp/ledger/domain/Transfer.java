@@ -9,6 +9,8 @@ import java.util.Optional;
  */
 public sealed interface Transfer permits PendingTransfer, PostedTransfer, VoidedTransfer, ExpiredTransfer {
 
+    TransferId id();
+
     TransferTerms terms();
 
     /** The status follows from the type, so the two can never disagree. */

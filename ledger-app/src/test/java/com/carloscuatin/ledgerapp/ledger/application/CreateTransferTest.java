@@ -2,6 +2,9 @@ package com.carloscuatin.ledgerapp.ledger.application;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.when;
 
 import java.util.Currency;
 import java.util.HashSet;
@@ -15,9 +18,14 @@ import com.carloscuatin.ledgerapp.ledger.domain.CurrencyNotEnabledException;
 import com.carloscuatin.ledgerapp.ledger.domain.DomainException;
 import com.carloscuatin.ledgerapp.ledger.domain.Money;
 import com.carloscuatin.ledgerapp.ledger.domain.PendingTransfer;
+import com.carloscuatin.ledgerapp.ledger.domain.TransferId;
 import com.carloscuatin.ledgerapp.ledger.domain.TransferStatus;
 import com.carloscuatin.ledgerapp.ledger.domain.TransferTerms;
 
+/**
+ * The ports are mocks: these tests need no container, no database and no network, and they decide what the identifier
+ * port answers.
+ */
 class CreateTransferTest {
 
     private static final Currency COP = Currency.getInstance("COP");
@@ -25,24 +33,30 @@ class CreateTransferTest {
     private static final AccountId SOURCE = new AccountId(UUID.fromString("00000000-0000-7000-8000-000000000001"));
     private static final AccountId DESTINATION = new AccountId(UUID.fromString("00000000-0000-7000-8000-000000000002"));
 
+    private static final UUID NEW_ID = UUID.fromString("00000000-0000-7000-8000-000000000003");
+
+    private final IdGenerator ids = mock(IdGenerator.class);
+
     private static TransferTerms terms(String amount, Currency currency) {
         return new TransferTerms(SOURCE, DESTINATION, Money.parse(amount, currency));
     }
 
     @Test
     void anEnabledCurrencyCreatesAHold() {
-        var createTransfer = new CreateTransfer(Set.of(COP));
+        when(ids.next()).thenReturn(NEW_ID);
+        var createTransfer = new CreateTransfer(Set.of(COP), ids);
         var terms = terms("150000.00", COP);
 
         PendingTransfer hold = createTransfer.create(terms);
 
         assertThat(hold.status()).isEqualTo(TransferStatus.PENDING);
+        assertThat(hold.id()).isEqualTo(new TransferId(NEW_ID));
         assertThat(hold.terms()).isEqualTo(terms);
     }
 
     @Test
     void aCurrencyThatIsNotEnabledIsRejected() {
-        var createTransfer = new CreateTransfer(Set.of(COP));
+        var createTransfer = new CreateTransfer(Set.of(COP), ids);
         var dollars = terms("100.00", USD);
 
         assertThatThrownBy(() -> createTransfer.create(dollars))
@@ -53,7 +67,8 @@ class CreateTransferTest {
 
     @Test
     void everyEnabledCurrencyCreatesAHold() {
-        var createTransfer = new CreateTransfer(Set.of(COP, USD));
+        when(ids.next()).thenReturn(NEW_ID);
+        var createTransfer = new CreateTransfer(Set.of(COP, USD), ids);
         var dollars = terms("100.00", USD);
 
         assertThat(createTransfer.create(dollars).terms()).isEqualTo(dollars);
@@ -61,16 +76,29 @@ class CreateTransferTest {
 
     @Test
     void nullTermsAreRejected() {
-        var createTransfer = new CreateTransfer(Set.of(COP));
+        var createTransfer = new CreateTransfer(Set.of(COP), ids);
 
         assertThatThrownBy(() -> createTransfer.create(null)).isInstanceOf(NullPointerException.class);
+        verifyNoInteractions(ids);
+    }
+
+    @Test
+    void nullEnabledCurrenciesAreRejected() {
+        assertThatThrownBy(() -> new CreateTransfer(null, ids)).isInstanceOf(NullPointerException.class)
+                .hasMessage("enabledCurrencies");
+    }
+
+    @Test
+    void aNullIdGeneratorIsRejected() {
+        assertThatThrownBy(() -> new CreateTransfer(Set.of(COP), null)).isInstanceOf(NullPointerException.class)
+                .hasMessage("ids");
     }
 
     @Test
     void theEnabledCurrenciesAreFixedWhenTheUseCaseIsBuilt() {
         var enabled = new HashSet<Currency>();
         enabled.add(COP);
-        var createTransfer = new CreateTransfer(enabled);
+        var createTransfer = new CreateTransfer(enabled, ids);
         var dollars = terms("100.00", USD);
 
         enabled.add(USD);

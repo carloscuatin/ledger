@@ -6,6 +6,7 @@ import java.util.Set;
 
 import com.carloscuatin.ledgerapp.ledger.domain.CurrencyNotEnabledException;
 import com.carloscuatin.ledgerapp.ledger.domain.PendingTransfer;
+import com.carloscuatin.ledgerapp.ledger.domain.TransferId;
 import com.carloscuatin.ledgerapp.ledger.domain.TransferTerms;
 
 /**
@@ -15,10 +16,12 @@ import com.carloscuatin.ledgerapp.ledger.domain.TransferTerms;
 public final class CreateTransfer {
 
     private final Set<Currency> enabledCurrencies;
+    private final IdGenerator ids;
 
-    public CreateTransfer(Set<Currency> enabledCurrencies) {
+    public CreateTransfer(Set<Currency> enabledCurrencies, IdGenerator ids) {
         // A copy: the caller's collection cannot widen or narrow what this use case accepts after it is built.
         this.enabledCurrencies = Set.copyOf(Objects.requireNonNull(enabledCurrencies, "enabledCurrencies"));
+        this.ids = Objects.requireNonNull(ids, "ids");
     }
 
     public PendingTransfer create(TransferTerms terms) {
@@ -27,6 +30,6 @@ public final class CreateTransfer {
         if (!enabledCurrencies.contains(currency)) {
             throw new CurrencyNotEnabledException(currency);
         }
-        return new PendingTransfer(terms);
+        return new PendingTransfer(new TransferId(ids.next()), terms);
     }
 }
