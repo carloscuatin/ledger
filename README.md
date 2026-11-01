@@ -31,6 +31,7 @@ Inside `ledger-app`, each Modulith module (`com.carloscuatin.ledgerapp.<module>`
 | `domain` | Entities, value objects, domain errors | plain Java only |
 | `application` | Use cases and the ports they need | `domain`, Spring's `@Transactional`, JSpecify annotations |
 | `adapters.in` / `adapters.out` | REST, JPA, messaging, schedulers | anything |
+| `adapters.config` | Spring configuration: typed properties and the `@Bean` methods that build use cases | anything |
 
 `LayersTest` (ArchUnit) and `ModularityTest` (Spring Modulith) fail the build when a boundary is
 crossed.
@@ -42,14 +43,31 @@ Everything runs from the repository root; the root POM is the parent and aggrega
 ```sh
 ./mvnw clean verify          # the gate: enforcer, NullAway, tests, ArchUnit, Modulith, Spotless
 ./mvnw spotless:apply        # format Java with the shared Eclipse profile
-./mvnw -Pmutation test-compile pitest:mutationCoverage   # mutation testing of every domain package
+./mvnw -Pmutation test-compile pitest:mutationCoverage   # mutation testing of domain and use cases
 ./mvnw -pl ledger-app spring-boot:run                    # run the application
 ```
 
 - The mutation report lands in `ledger-app/target/pit-reports/index.html`. The threshold is 100 %: a
-  surviving mutant is a missing test. An equivalent mutant is excluded by method with
-  `excludedMethods`, never by lowering the threshold.
+  surviving mutant is a missing test, and one no test can kill is removed by changing the shape of
+  the code, never by excluding it or lowering the threshold.
 - The enforcer fails in `validate` with a JDK older than 25; run `sdk env` in the repository root.
+- Add `-o` to work offline from `~/.m2`; leave it out only when a dependency or plugin changes.
+
+## Configuration
+
+| Setting | Environment variable | Default | Meaning |
+|---|---|---|---|
+| `ledger.currencies` | `LEDGER_CURRENCIES` | `COP` | Currencies this deployment operates, comma separated |
+
+Settings are validated at startup: a missing value, an unknown code or a currency without a scale
+stops the application and the report names the setting. A command line argument wins over an
+environment variable, and an environment variable wins over the packaged `application.properties`.
+
+```sh
+./mvnw -pl ledger-app spring-boot:run -Dspring-boot.run.arguments=--debug  # what Boot auto-configured and why
+./mvnw -DskipTests package                                                 # build the executable jar
+LEDGER_CURRENCIES=COP,USD java -jar ledger-app/target/ledger-app-0.0.1-SNAPSHOT.jar
+```
 
 ## Nullness
 
