@@ -56,10 +56,7 @@ class TransferSchemaIT {
     private static void insert(UUID from, UUID to, long amount, String status) throws SQLException {
         try (var connection = LedgerDatabase.asApplication()) {
             connection.setAutoCommit(false);
-            try (var tenant = connection.prepareStatement("SELECT set_config('app.tenant_id', ?, true)")) {
-                tenant.setString(1, UUID.randomUUID().toString());
-                tenant.execute();
-            }
+            TransferRows.setTenant(connection, UUID.randomUUID());
             try (var insert = connection.prepareStatement("""
                     INSERT INTO transfer (id, source_account_id, destination_account_id, amount_minor, currency, status)
                     VALUES (?, ?, ?, ?, 'COP', ?)

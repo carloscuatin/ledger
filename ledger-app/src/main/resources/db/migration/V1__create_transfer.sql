@@ -1,9 +1,11 @@
 -- The roles exist before this runs: whoever administers the database creates them, and the role that runs this
 -- migration ends up owning what it creates.
 
+-- The setting is empty, not NULL, on a connection that used it in an earlier transaction. Without NULLIF the policy
+-- would fail on the cast there instead of matching no rows, and only on connections reused from a pool.
 CREATE FUNCTION current_tenant_id() RETURNS uuid
     LANGUAGE sql STABLE
-    AS $$ SELECT current_setting('app.tenant_id', true)::uuid $$;
+    AS $$ SELECT NULLIF(current_setting('app.tenant_id', true), '')::uuid $$;
 
 CREATE TABLE transfer (
     id                     uuid PRIMARY KEY,
