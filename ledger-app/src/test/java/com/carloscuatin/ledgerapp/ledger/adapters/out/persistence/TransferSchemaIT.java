@@ -1,0 +1,89 @@
+package com.carloscuatin.ledgerapp.ledger.adapters.out.persistence;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
+import java.sql.SQLException;
+import java.util.UUID;
+
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
+
+/**
+ * The table rejects what the domain would reject, even when a statement never went through the domain. Statements run
+ * as the application role, in a transaction of a new tenant, and are never committed.
+ */
+class TransferSchemaIT {
+
+    private static final String CHECK_VIOLATION = "23514";
+
+    private final UUID source = UUID.randomUUID();
+    private final UUID destination = UUID.randomUUID();
+
+    @Test
+    void aValidRowIsAccepted() {
+        assertThatCode(() -> insert(source, destination, 1, "PENDING")).doesNotThrowAnyException();
+    }
+
+    @ParameterizedTest
+    @ValueSource(longs = {0, -1})
+    void aNonPositiveAmountIsRejected(long amount) {
+        assertThatThrownBy(() -> insert(source, destination, amount, "PENDING"))
+                .isInstanceOfSatisfying(SQLException.class, TransferSchemaIT::isACheckViolation)
+                .hasMessageContaining("transfer_amount_minor_check");
+    }
+
+    @Test
+    void theSameAccountOnBothSidesIsRejected() {
+        assertThatThrownBy(() -> insert(source, source, 1, "PENDING"))
+                .isInstanceOfSatisfying(SQLException.class, TransferSchemaIT::isACheckViolation)
+                .hasMessageContaining("transfer_check");
+    }
+
+    @Test
+    void anUnknownStatusIsRejected() {
+        assertThatThrownBy(() -> insert(source, destination, 1, "UNKNOWN"))
+                .isInstanceOfSatisfying(SQLException.class, TransferSchemaIT::isACheckViolation)
+                .hasMessageContaining("transfer_status_check");
+    }
+
+    /** A code shorter than the column is padded with spaces before the check sees it, so it does not fit either. */
+    @ParameterizedTest
+    @ValueSource(strings = {"cop", "A", "C0P", "ÑOP"})
+    void aCurrencyThatIsNotThreeUppercaseLettersIsRejected(String currency) {
+        assertThatThrownBy(() -> insert(source, destination, 1, "PENDING", currency))
+                .isInstanceOfSatisfying(SQLException.class, TransferSchemaIT::isACheckViolation)
+                .hasMessageContaining("transfer_currency_check");
+    }
+
+    private static void isACheckViolation(SQLException failure) {
+        assertThat(failure.getSQLState()).isEqualTo(CHECK_VIOLATION);
+    }
+
+    private static void insert(UUID from, UUID to, long amount, String status) throws SQLException {
+        insert(from, to, amount, status, "COP");
+    }
+
+    private static void insert(UUID from, UUID to, long amount, String status, String currency) throws SQLException {
+        try (var connection = LedgerDatabase.asApplication()) {
+            connection.setAutoCommit(false);
+            TransferRows.setTenant(connection, UUID.randomUUID());
+            try (var insert = connection.prepareStatement("""
+                    INSERT INTO transfer (id, source_account_id, destination_account_id, amount_minor, currency, status)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    """)) {
+                insert.setObject(1, UUID.randomUUID());
+                insert.setObject(2, from);
+                insert.setObject(3, to);
+                insert.setLong(4, amount);
+                insert.setString(5, currency);
+                insert.setString(6, status);
+                insert.executeUpdate();
+            } finally {
+                connection.rollback();
+            }
+        }
+    }
+}

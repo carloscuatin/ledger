@@ -6,9 +6,10 @@ import java.util.Optional;
 /**
  * A hold released on purpose before it was posted; no money moved.
  */
-public record VoidedTransfer(TransferTerms terms) implements Transfer {
+public record VoidedTransfer(TransferId id, TransferTerms terms) implements Transfer {
 
     public VoidedTransfer {
+        Objects.requireNonNull(id, "id");
         Objects.requireNonNull(terms, "terms");
     }
 

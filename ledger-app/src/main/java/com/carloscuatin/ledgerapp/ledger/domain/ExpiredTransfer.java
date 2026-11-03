@@ -6,9 +6,10 @@ import java.util.Optional;
 /**
  * A hold that ran out of time before it was posted; no money moved.
  */
-public record ExpiredTransfer(TransferTerms terms) implements Transfer {
+public record ExpiredTransfer(TransferId id, TransferTerms terms) implements Transfer {
 
     public ExpiredTransfer {
+        Objects.requireNonNull(id, "id");
         Objects.requireNonNull(terms, "terms");
     }
 

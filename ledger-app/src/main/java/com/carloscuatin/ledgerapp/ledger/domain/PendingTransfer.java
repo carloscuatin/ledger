@@ -7,9 +7,10 @@ import java.util.Optional;
 /**
  * A hold: the money is reserved and waits to be posted, voided or expired.
  */
-public record PendingTransfer(TransferTerms terms) implements Transfer {
+public record PendingTransfer(TransferId id, TransferTerms terms) implements Transfer {
 
     public PendingTransfer {
+        Objects.requireNonNull(id, "id");
         Objects.requireNonNull(terms, "terms");
     }
 
@@ -21,15 +22,15 @@ public record PendingTransfer(TransferTerms terms) implements Transfer {
         var entry = new JournalEntry(List.of(
                 new Posting(terms.source(), Side.DEBIT, terms.amount()),
                 new Posting(terms.destination(), Side.CREDIT, terms.amount())));
-        return new PostedTransfer(terms, entry);
+        return new PostedTransfer(id, terms, entry);
     }
 
     public VoidedTransfer voidHold() {
-        return new VoidedTransfer(terms);
+        return new VoidedTransfer(id, terms);
     }
 
     public ExpiredTransfer expire() {
-        return new ExpiredTransfer(terms);
+        return new ExpiredTransfer(id, terms);
     }
 
     @Override

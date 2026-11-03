@@ -19,6 +19,7 @@ import org.junit.jupiter.params.provider.MethodSource;
 class TransferTest {
 
     private static final Currency COP = Currency.getInstance("COP");
+    private static final TransferId ID = new TransferId(UUID.fromString("00000000-0000-7000-8000-000000000003"));
     private static final AccountId SOURCE = new AccountId(UUID.fromString("00000000-0000-7000-8000-000000000001"));
     private static final AccountId DESTINATION = new AccountId(UUID.fromString("00000000-0000-7000-8000-000000000002"));
     private static final Money AMOUNT = Money.parse("150000.00", COP);
@@ -35,36 +36,42 @@ class TransferTest {
     }
 
     @Test
-    void everyStateKeepsItsTerms() {
+    void everyStateKeepsItsIdentityAndTerms() {
         List<Transfer> states = List.of(
-                new PendingTransfer(TERMS),
-                new PostedTransfer(TERMS, ENTRY),
-                new VoidedTransfer(TERMS),
-                new ExpiredTransfer(TERMS));
+                new PendingTransfer(ID, TERMS),
+                new PostedTransfer(ID, TERMS, ENTRY),
+                new VoidedTransfer(ID, TERMS),
+                new ExpiredTransfer(ID, TERMS));
 
+        assertThat(states).extracting(Transfer::id).hasSize(4).containsOnly(ID);
         assertThat(states).extracting(Transfer::terms).containsOnly(TERMS);
     }
 
     @Test
     void aPostedTransferKeepsItsJournalEntry() {
-        var posted = new PostedTransfer(TERMS, ENTRY);
+        var posted = new PostedTransfer(ID, TERMS, ENTRY);
 
         assertThat(posted.entry()).isEqualTo(ENTRY);
     }
 
     @Test
     void nullStatePartsAreRejected() {
-        assertThatThrownBy(() -> new PendingTransfer(null)).isInstanceOf(NullPointerException.class);
-        assertThatThrownBy(() -> new PostedTransfer(null, ENTRY)).isInstanceOf(NullPointerException.class);
-        assertThatThrownBy(() -> new PostedTransfer(TERMS, null)).isInstanceOf(NullPointerException.class);
-        assertThatThrownBy(() -> new VoidedTransfer(null)).isInstanceOf(NullPointerException.class);
-        assertThatThrownBy(() -> new ExpiredTransfer(null)).isInstanceOf(NullPointerException.class);
+        assertThatThrownBy(() -> new PendingTransfer(null, TERMS)).isInstanceOf(NullPointerException.class);
+        assertThatThrownBy(() -> new PendingTransfer(ID, null)).isInstanceOf(NullPointerException.class);
+        assertThatThrownBy(() -> new PostedTransfer(null, TERMS, ENTRY)).isInstanceOf(NullPointerException.class);
+        assertThatThrownBy(() -> new PostedTransfer(ID, null, ENTRY)).isInstanceOf(NullPointerException.class);
+        assertThatThrownBy(() -> new PostedTransfer(ID, TERMS, null)).isInstanceOf(NullPointerException.class);
+        assertThatThrownBy(() -> new VoidedTransfer(null, TERMS)).isInstanceOf(NullPointerException.class);
+        assertThatThrownBy(() -> new VoidedTransfer(ID, null)).isInstanceOf(NullPointerException.class);
+        assertThatThrownBy(() -> new ExpiredTransfer(null, TERMS)).isInstanceOf(NullPointerException.class);
+        assertThatThrownBy(() -> new ExpiredTransfer(ID, null)).isInstanceOf(NullPointerException.class);
     }
 
     @Test
     void postingAHoldDebitsTheSourceAndCreditsTheDestination() {
-        var posted = new PendingTransfer(TERMS).post();
+        var posted = new PendingTransfer(ID, TERMS).post();
 
+        assertThat(posted.id()).isEqualTo(ID);
         assertThat(posted.terms()).isEqualTo(TERMS);
         assertThat(posted.entry().postings())
                 .containsExactly(new Posting(SOURCE, Side.DEBIT, AMOUNT),
@@ -74,33 +81,35 @@ class TransferTest {
     @Test
     void postingKeepsTheCurrencyOfTheHold() {
         var yen = Money.parse("100", Currency.getInstance("JPY"));
-        var posted = new PendingTransfer(new TransferTerms(SOURCE, DESTINATION, yen)).post();
+        var posted = new PendingTransfer(ID, new TransferTerms(SOURCE, DESTINATION, yen)).post();
 
         assertThat(posted.entry().postings())
                 .containsExactly(new Posting(SOURCE, Side.DEBIT, yen), new Posting(DESTINATION, Side.CREDIT, yen));
     }
 
     @Test
-    void voidingAHoldKeepsItsTerms() {
-        VoidedTransfer voided = new PendingTransfer(TERMS).voidHold();
+    void voidingAHoldKeepsItsIdentityAndTerms() {
+        VoidedTransfer voided = new PendingTransfer(ID, TERMS).voidHold();
 
+        assertThat(voided.id()).isEqualTo(ID);
         assertThat(voided.terms()).isEqualTo(TERMS);
     }
 
     @Test
-    void expiringAHoldKeepsItsTerms() {
-        ExpiredTransfer expired = new PendingTransfer(TERMS).expire();
+    void expiringAHoldKeepsItsIdentityAndTerms() {
+        ExpiredTransfer expired = new PendingTransfer(ID, TERMS).expire();
 
+        assertThat(expired.id()).isEqualTo(ID);
         assertThat(expired.terms()).isEqualTo(TERMS);
     }
 
     @Test
     void transitionsReturnANewStateAndLeaveTheHoldUnchanged() {
-        var pending = new PendingTransfer(TERMS);
+        var pending = new PendingTransfer(ID, TERMS);
 
         pending.post();
 
-        assertThat(pending).isEqualTo(new PendingTransfer(TERMS));
+        assertThat(pending).isEqualTo(new PendingTransfer(ID, TERMS));
     }
 
     @Test
@@ -123,20 +132,21 @@ class TransferTest {
 
     static Stream<Arguments> statesAndTheirStatus() {
         return Stream.of(
-                Arguments.of(new PendingTransfer(TERMS), TransferStatus.PENDING),
-                Arguments.of(new PostedTransfer(TERMS, ENTRY), TransferStatus.POSTED),
-                Arguments.of(new VoidedTransfer(TERMS), TransferStatus.VOIDED),
-                Arguments.of(new ExpiredTransfer(TERMS), TransferStatus.EXPIRED));
+                Arguments.of(new PendingTransfer(ID, TERMS), TransferStatus.PENDING),
+                Arguments.of(new PostedTransfer(ID, TERMS, ENTRY), TransferStatus.POSTED),
+                Arguments.of(new VoidedTransfer(ID, TERMS), TransferStatus.VOIDED),
+                Arguments.of(new ExpiredTransfer(ID, TERMS), TransferStatus.EXPIRED));
     }
 
     @Test
     void aPostedTransferExposesItsJournalEntry() {
-        Transfer transfer = new PendingTransfer(TERMS).post();
+        Transfer transfer = new PendingTransfer(ID, TERMS).post();
 
-        if (!(transfer instanceof PostedTransfer(TransferTerms(var source, var destination, var amount), var entry))) {
+        if (!(transfer instanceof PostedTransfer(var id, TransferTerms(var source, var destination, var amount), var entry))) {
             fail("posting a hold must produce a posted transfer, got " + transfer);
             return;
         }
+        assertThat(id).isEqualTo(ID);
         assertThat(source).isEqualTo(SOURCE);
         assertThat(destination).isEqualTo(DESTINATION);
         assertThat(amount).isEqualTo(AMOUNT);
@@ -145,19 +155,19 @@ class TransferTest {
 
     @Test
     void onlyAPostedTransferHasAJournalEntry() {
-        List<Transfer> withoutEntry = List.of(new PendingTransfer(TERMS), new VoidedTransfer(TERMS),
-                new ExpiredTransfer(TERMS));
+        List<Transfer> withoutEntry = List.of(new PendingTransfer(ID, TERMS), new VoidedTransfer(ID, TERMS),
+                new ExpiredTransfer(ID, TERMS));
 
         assertThat(withoutEntry).hasSize(3).allSatisfy(transfer -> assertThat(transfer.journalEntry()).isEmpty());
     }
 
     @Test
     void applyingAnActionToAHoldReachesItsState() {
-        Transfer pending = new PendingTransfer(TERMS);
+        Transfer pending = new PendingTransfer(ID, TERMS);
 
-        assertThat(pending.apply(TransferAction.POST)).isEqualTo(new PendingTransfer(TERMS).post());
-        assertThat(pending.apply(TransferAction.VOID)).isEqualTo(new VoidedTransfer(TERMS));
-        assertThat(pending.apply(TransferAction.EXPIRE)).isEqualTo(new ExpiredTransfer(TERMS));
+        assertThat(pending.apply(TransferAction.POST)).isEqualTo(new PendingTransfer(ID, TERMS).post());
+        assertThat(pending.apply(TransferAction.VOID)).isEqualTo(new VoidedTransfer(ID, TERMS));
+        assertThat(pending.apply(TransferAction.EXPIRE)).isEqualTo(new ExpiredTransfer(ID, TERMS));
     }
 
     @ParameterizedTest
@@ -170,30 +180,35 @@ class TransferTest {
 
     static Stream<Arguments> finalStatesAndActions() {
         return Stream.of(
-                Arguments.of(new PostedTransfer(TERMS, ENTRY), TransferAction.POST,
+                Arguments.of(new PostedTransfer(ID, TERMS, ENTRY), TransferAction.POST,
                         "Cannot POST a transfer that is POSTED"),
-                Arguments.of(new PostedTransfer(TERMS, ENTRY), TransferAction.VOID,
+                Arguments.of(new PostedTransfer(ID, TERMS, ENTRY), TransferAction.VOID,
                         "Cannot VOID a transfer that is POSTED"),
                 Arguments.of(
-                        new PostedTransfer(TERMS, ENTRY), TransferAction.EXPIRE,
+                        new PostedTransfer(ID, TERMS, ENTRY), TransferAction.EXPIRE,
                         "Cannot EXPIRE a transfer that is POSTED"),
-                Arguments.of(new VoidedTransfer(TERMS), TransferAction.POST, "Cannot POST a transfer that is VOIDED"),
-                Arguments.of(new VoidedTransfer(TERMS), TransferAction.VOID, "Cannot VOID a transfer that is VOIDED"),
-                Arguments.of(new VoidedTransfer(TERMS), TransferAction.EXPIRE,
+                Arguments.of(new VoidedTransfer(ID, TERMS), TransferAction.POST,
+                        "Cannot POST a transfer that is VOIDED"),
+                Arguments.of(new VoidedTransfer(ID, TERMS), TransferAction.VOID,
+                        "Cannot VOID a transfer that is VOIDED"),
+                Arguments.of(new VoidedTransfer(ID, TERMS), TransferAction.EXPIRE,
                         "Cannot EXPIRE a transfer that is VOIDED"),
-                Arguments.of(new ExpiredTransfer(TERMS), TransferAction.POST, "Cannot POST a transfer that is EXPIRED"),
-                Arguments.of(new ExpiredTransfer(TERMS), TransferAction.VOID, "Cannot VOID a transfer that is EXPIRED"),
+                Arguments.of(new ExpiredTransfer(ID, TERMS), TransferAction.POST,
+                        "Cannot POST a transfer that is EXPIRED"),
+                Arguments.of(new ExpiredTransfer(ID, TERMS), TransferAction.VOID,
+                        "Cannot VOID a transfer that is EXPIRED"),
                 Arguments.of(
-                        new ExpiredTransfer(TERMS), TransferAction.EXPIRE, "Cannot EXPIRE a transfer that is EXPIRED"));
+                        new ExpiredTransfer(ID, TERMS), TransferAction.EXPIRE,
+                        "Cannot EXPIRE a transfer that is EXPIRED"));
     }
 
     @Test
     void aNullActionIsRejectedInEveryState() {
         List<Transfer> states = List.of(
-                new PendingTransfer(TERMS),
-                new PostedTransfer(TERMS, ENTRY),
-                new VoidedTransfer(TERMS),
-                new ExpiredTransfer(TERMS));
+                new PendingTransfer(ID, TERMS),
+                new PostedTransfer(ID, TERMS, ENTRY),
+                new VoidedTransfer(ID, TERMS),
+                new ExpiredTransfer(ID, TERMS));
 
         assertThat(states).hasSize(4).allSatisfy(transfer -> assertThatThrownBy(() -> transfer.apply(null))
                 .isInstanceOf(NullPointerException.class)
