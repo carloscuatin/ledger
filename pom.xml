@@ -48,6 +48,7 @@
         <nullaway.version>0.14.3</nullaway.version>
         <pitest.version>1.30.1</pitest.version>
         <pitest-junit5-plugin.version>1.2.3</pitest-junit5-plugin.version>
+        <openapi-generator.version>7.27.0</openapi-generator.version>
     </properties>
 
     <dependencyManagement>
@@ -78,6 +79,11 @@
     <build>
         <pluginManagement>
             <plugins>
+                <plugin>
+                    <groupId>org.openapitools</groupId>
+                    <artifactId>openapi-generator-maven-plugin</artifactId>
+                    <version>${openapi-generator.version}</version>
+                </plugin>
                 <plugin>
                     <groupId>com.diffplug.spotless</groupId>
                     <artifactId>spotless-maven-plugin</artifactId>
