@@ -8,6 +8,7 @@ import org.hibernate.type.SqlTypes;
 import com.carloscuatin.ledgerapp.ledger.domain.PendingTransfer;
 import com.carloscuatin.ledgerapp.ledger.domain.TransferStatus;
 
+import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
@@ -16,10 +17,9 @@ import jakarta.persistence.Table;
 
 /**
  * The row of a transfer, kept apart from the domain so that neither knows how the other changes. The tenant is
- * deliberately not mapped: the database takes it from the transaction, so no code here can get it wrong.
+ * deliberately not mapped: the database takes it from the transaction, so no code here can get it wrong. Hibernate reads
+ * the fields directly, and nothing else needs to.
  */
-// Hibernate reads the fields directly, and nothing else needs to.
-@SuppressWarnings("UnusedVariable")
 @Entity
 @Table(name = "transfer")
 class TransferEntity {
@@ -27,16 +27,21 @@ class TransferEntity {
     @Id
     private UUID id;
 
+    @Column
     private UUID sourceAccountId;
 
+    @Column
     private UUID destinationAccountId;
 
+    @Column
     private long amountMinor;
 
     // The column is a fixed char, and schema validation at startup compares the type, not only the name.
+    @Column
     @JdbcTypeCode(SqlTypes.CHAR)
     private String currency;
 
+    @Column
     @Enumerated(EnumType.STRING)
     private TransferStatus status;
 

@@ -22,10 +22,10 @@ import com.carloscuatin.ledgerapp.LedgerApplication;
  */
 public final class LedgerDatabase {
 
-    private static final PostgreSQLContainer SERVER = new PostgreSQLContainer("postgres:16.15-alpine")
-            .withInitScript("db/roles.sql");
+    private static final PostgreSQLContainer SERVER = new PostgreSQLContainer("postgres:16.15-alpine");
 
     static {
+        SERVER.withInitScript("db/roles.sql");
         SERVER.start();
         startMigrateProfile().close();
     }
