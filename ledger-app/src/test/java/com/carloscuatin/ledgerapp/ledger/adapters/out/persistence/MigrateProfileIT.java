@@ -92,6 +92,18 @@ class MigrateProfileIT {
         }
     }
 
+    /** Without this, a wrong location finds nothing to apply and the deployment goes on with a schema nobody migrated. */
+    @Test
+    void theMigrateProfileFailsWhenTheLocationOfItsMigrationsDoesNotExist() throws SQLException {
+        var url = LedgerDatabase.createEmptyDatabase();
+        try (var connection = LedgerDatabase.asSuperuser(url); var statement = connection.createStatement()) {
+            statement.execute("GRANT USAGE, CREATE ON SCHEMA public TO ledger_migrator");
+        }
+
+        assertThatThrownBy(() -> LedgerDatabase.startMigrateProfile(url, "--spring.flyway.locations=classpath:missing"))
+                .hasStackTraceContaining("Unable to resolve location classpath:missing");
+    }
+
     private static int appliedMigrations() throws SQLException {
         try (var connection = LedgerDatabase.asSuperuser();
                 var statement = connection.createStatement();
