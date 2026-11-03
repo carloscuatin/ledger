@@ -3,6 +3,8 @@ package com.carloscuatin.ledgerapp.ledger.adapters.out.persistence;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.SQLException;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 
 import org.springframework.boot.builder.SpringApplicationBuilder;
@@ -44,6 +46,12 @@ public final class LedgerDatabase {
                 .run(arguments(SERVER.getJdbcUrl(), "ledger_migrator", "test-only-migrator"));
     }
 
+    /** Starts the migrate profile on another database, with extra command line arguments. */
+    static ConfigurableApplicationContext startMigrateProfile(String url, String... extraArguments) {
+        return new SpringApplicationBuilder(LedgerApplication.class).profiles("migrate")
+                .run(arguments(url, "ledger_migrator", "test-only-migrator", extraArguments));
+    }
+
     /** Starts the application without a profile on a database, as a context the caller closes. */
     static ConfigurableApplicationContext startApplication(String url) {
         return new SpringApplicationBuilder(LedgerApplication.class)
@@ -60,6 +68,12 @@ public final class LedgerDatabase {
 
     static ConfigurableApplicationContext startApplicationAs(String url, String username, String password) {
         return new SpringApplicationBuilder(LedgerApplication.class).run(arguments(url, username, password));
+    }
+
+    /** With lazy initialization, the setting under which a bean that nothing depends on is never created. */
+    static ConfigurableApplicationContext startLazyApplicationAs(String username, String password) {
+        return new SpringApplicationBuilder(LedgerApplication.class).run(
+                arguments(SERVER.getJdbcUrl(), username, password, "--spring.main.lazy-initialization=true"));
     }
 
     static String superuserName() {
@@ -80,16 +94,21 @@ public final class LedgerDatabase {
         try (var connection = asSuperuser(); var statement = connection.createStatement()) {
             statement.execute("CREATE DATABASE " + name);
         }
-        return "jdbc:postgresql://%s:%d/%s".formatted(
-                SERVER.getHost(), SERVER.getMappedPort(PostgreSQLContainer.POSTGRESQL_PORT), name);
+        return urlOf(name);
     }
 
-    private static String[] arguments(String url, String username, String password) {
-        return new String[] {
-            "--spring.datasource.url=" + url,
-            "--spring.datasource.username=" + username,
-            "--spring.datasource.password=" + password
-        };
+    static String urlOf(String database) {
+        return "jdbc:postgresql://%s:%d/%s".formatted(
+                SERVER.getHost(), SERVER.getMappedPort(PostgreSQLContainer.POSTGRESQL_PORT), database);
+    }
+
+    private static String[] arguments(String url, String username, String password, String... extraArguments) {
+        var arguments = new ArrayList<>(List.of(
+                "--spring.datasource.url=" + url,
+                "--spring.datasource.username=" + username,
+                "--spring.datasource.password=" + password));
+        arguments.addAll(List.of(extraArguments));
+        return arguments.toArray(String[]::new);
     }
 
     static Connection as(String username, String password) throws SQLException {

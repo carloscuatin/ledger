@@ -2,6 +2,7 @@ package com.carloscuatin.ledgerapp.ledger.adapters.out.persistence;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.context.annotation.Profile;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.orm.jpa.JpaVendorAdapter;
@@ -33,7 +34,9 @@ class PersistenceConfiguration {
         };
     }
 
+    /** Nothing depends on the guard, so with lazy initialization turned on it would otherwise never be created. */
     @Bean
+    @Lazy(false)
     DatabaseRoleGuard databaseRoleGuard(JdbcClient jdbc) {
         return new DatabaseRoleGuard(jdbc);
     }

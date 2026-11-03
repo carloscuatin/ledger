@@ -6,7 +6,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.sql.SQLException;
+import java.sql.Statement;
 
+import org.assertj.core.api.ThrowableAssert.ThrowingCallable;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -29,7 +31,30 @@ class DatabaseRoleGuardIT {
     private static final String UNRELATED_ROLE = "ledger_unrelated";
     private static final String UNRELATED_PASSWORD = "test-only-unrelated";
 
-    private static final String OWNER_REASON = "it owns, or is a member of the owner of, a table in the public schema";
+    private static final String MEMBER_OF_SUPERUSER_ROLE = "ledger_member_of_superuser";
+    private static final String MEMBER_OF_SUPERUSER_PASSWORD = "test-only-member-of-superuser";
+    private static final String MEMBER_OF_BYPASS_ROLE = "ledger_member_of_bypass";
+    private static final String MEMBER_OF_BYPASS_PASSWORD = "test-only-member-of-bypass";
+    private static final String OWNER_ELSEWHERE_ROLE = "ledger_owner_elsewhere";
+    private static final String OWNER_ELSEWHERE_PASSWORD = "test-only-owner-elsewhere";
+    private static final String SCHEMA_OWNER_ROLE = "ledger_schema_owner";
+    private static final String SCHEMA_OWNER_PASSWORD = "test-only-schema-owner";
+    private static final String MEMBER_OF_SCHEMA_OWNER_ROLE = "ledger_member_of_schema_owner";
+    private static final String MEMBER_OF_SCHEMA_OWNER_PASSWORD = "test-only-member-of-schema-owner";
+    private static final String EMPTY_SCHEMA_OWNER_ROLE = "ledger_empty_schema_owner";
+    private static final String EMPTY_SCHEMA_OWNER_PASSWORD = "test-only-empty-schema-owner";
+    private static final String DATABASE_OWNER_ROLE = "ledger_database_owner";
+    private static final String DATABASE_OWNER_PASSWORD = "test-only-database-owner";
+
+    private static final String SCHEMA_ELSEWHERE = "ledger_elsewhere";
+    private static final String OWNED_SCHEMA = "ledger_owned";
+    private static final String EMPTY_SCHEMA = "ledger_empty";
+    private static final String OWNED_DATABASE = "ledger_owned_database";
+
+    private static final String MEMBER_OF_SUPERUSER_REASON = "it is a member of a superuser";
+    private static final String MEMBER_OF_BYPASS_REASON = "it is a member of a role with BYPASSRLS";
+    private static final String OWNER_REASON = "it owns, or is a member of the owner of, a table";
+    private static final String SCHEMA_OWNER_REASON = "it owns, or is a member of the owner of, a schema that holds a table";
 
     @BeforeAll
     static void theRolesUnderTestExist() throws SQLException {
@@ -45,15 +70,49 @@ class DatabaseRoleGuardIT {
             statement.execute("CREATE ROLE %s LOGIN PASSWORD '%s' NOSUPERUSER NOBYPASSRLS"
                     .formatted(UNRELATED_ROLE, UNRELATED_PASSWORD));
             statement.execute("GRANT ledger_app TO " + UNRELATED_ROLE);
+
+            createRole(statement, MEMBER_OF_SUPERUSER_ROLE, MEMBER_OF_SUPERUSER_PASSWORD);
+            statement.execute("GRANT %s TO %s".formatted(LedgerDatabase.superuserName(), MEMBER_OF_SUPERUSER_ROLE));
+            createRole(statement, MEMBER_OF_BYPASS_ROLE, MEMBER_OF_BYPASS_PASSWORD);
+            statement.execute("GRANT %s TO %s".formatted(BYPASS_ROLE, MEMBER_OF_BYPASS_ROLE));
+
+            createRole(statement, OWNER_ELSEWHERE_ROLE, OWNER_ELSEWHERE_PASSWORD);
+            statement.execute("CREATE SCHEMA " + SCHEMA_ELSEWHERE);
+            statement.execute("CREATE TABLE %s.held (id integer)".formatted(SCHEMA_ELSEWHERE));
+            statement.execute("ALTER TABLE %s.held OWNER TO %s".formatted(SCHEMA_ELSEWHERE, OWNER_ELSEWHERE_ROLE));
+
+            createRole(statement, SCHEMA_OWNER_ROLE, SCHEMA_OWNER_PASSWORD);
+            statement.execute("CREATE SCHEMA %s AUTHORIZATION %s".formatted(OWNED_SCHEMA, SCHEMA_OWNER_ROLE));
+            statement.execute("CREATE TABLE %s.held (id integer)".formatted(OWNED_SCHEMA));
+            createRole(statement, MEMBER_OF_SCHEMA_OWNER_ROLE, MEMBER_OF_SCHEMA_OWNER_PASSWORD);
+            statement.execute("GRANT %s TO %s".formatted(SCHEMA_OWNER_ROLE, MEMBER_OF_SCHEMA_OWNER_ROLE));
+
+            createRole(statement, EMPTY_SCHEMA_OWNER_ROLE, EMPTY_SCHEMA_OWNER_PASSWORD);
+            statement.execute("CREATE SCHEMA %s AUTHORIZATION %s".formatted(EMPTY_SCHEMA, EMPTY_SCHEMA_OWNER_ROLE));
+
+            createRole(statement, DATABASE_OWNER_ROLE, DATABASE_OWNER_PASSWORD);
+            statement.execute("CREATE DATABASE %s OWNER %s".formatted(OWNED_DATABASE, DATABASE_OWNER_ROLE));
         }
+        try (var connection = LedgerDatabase.asSuperuser(LedgerDatabase.urlOf(OWNED_DATABASE));
+                var statement = connection.createStatement()) {
+            statement.execute("GRANT USAGE, CREATE ON SCHEMA public TO ledger_migrator");
+        }
+        LedgerDatabase.startMigrateProfile(LedgerDatabase.urlOf(OWNED_DATABASE)).close();
+    }
+
+    private static void createRole(Statement statement, String role, String password) throws SQLException {
+        statement.execute("CREATE ROLE %s LOGIN PASSWORD '%s' NOSUPERUSER NOBYPASSRLS".formatted(role, password));
     }
 
     /** Roles belong to the whole server, which other test classes share. */
     @AfterAll
     static void theRolesUnderTestAreGone() throws SQLException {
         try (var connection = LedgerDatabase.asSuperuser(); var statement = connection.createStatement()) {
-            statement.execute("DROP ROLE %s, %s, %s, %s"
-                    .formatted(BYPASS_ROLE, MEMBER_ROLE, NOINHERIT_ROLE, UNRELATED_ROLE));
+            statement.execute("DROP DATABASE %s WITH (FORCE)".formatted(OWNED_DATABASE));
+            statement.execute("DROP SCHEMA %s, %s, %s CASCADE".formatted(SCHEMA_ELSEWHERE, OWNED_SCHEMA, EMPTY_SCHEMA));
+            statement.execute("DROP ROLE " + String.join(", ", MEMBER_OF_BYPASS_ROLE, BYPASS_ROLE, MEMBER_ROLE,
+                    NOINHERIT_ROLE, UNRELATED_ROLE, MEMBER_OF_SUPERUSER_ROLE, OWNER_ELSEWHERE_ROLE,
+                    MEMBER_OF_SCHEMA_OWNER_ROLE, SCHEMA_OWNER_ROLE, EMPTY_SCHEMA_OWNER_ROLE, DATABASE_OWNER_ROLE));
         }
     }
 
@@ -93,7 +152,11 @@ class DatabaseRoleGuardIT {
     }
 
     private static void assertRefused(String role, String password, String reason, String secret) {
-        assertThatThrownBy(() -> LedgerDatabase.startApplicationAs(role, password))
+        assertRefused(() -> LedgerDatabase.startApplicationAs(role, password), role, reason, secret);
+    }
+
+    private static void assertRefused(ThrowingCallable startup, String role, String reason, String secret) {
+        assertThatThrownBy(startup)
                 .hasRootCauseExactlyInstanceOf(IllegalStateException.class)
                 .hasRootCauseMessage("Refusing to start with database role '%s': %s", role, reason)
                 .satisfies(failure -> {
@@ -192,5 +255,127 @@ class DatabaseRoleGuardIT {
 
         assertThatThrownBy(() -> LedgerDatabase.startApplicationAs(url, "ledger_migrator", "test-only-migrator"))
                 .hasStackTraceContaining("Schema validation: missing table [transfer]");
+    }
+
+    /** Nothing depends on the guard, so a process with lazy initialization would otherwise never create it. */
+    @Test
+    void theApplicationDoesNotStartAsASuperuserWithLazyInitialization() {
+        var role = LedgerDatabase.superuserName();
+
+        assertRefused(() -> LedgerDatabase.startLazyApplicationAs(role, LedgerDatabase.superuserPassword()), role,
+                "it is a superuser", "jdbc:postgresql");
+    }
+
+    @Test
+    void theApplicationStartsWithItsOwnRoleWithLazyInitialization() {
+        LedgerDatabase.startLazyApplicationAs("ledger_app", "test-only-app").close();
+    }
+
+    @Test
+    void theApplicationDoesNotStartAsAMemberOfASuperuser() throws SQLException {
+        assertRole(MEMBER_OF_SUPERUSER_ROLE, false, false, false);
+
+        assertRefused(MEMBER_OF_SUPERUSER_ROLE, MEMBER_OF_SUPERUSER_PASSWORD, MEMBER_OF_SUPERUSER_REASON,
+                MEMBER_OF_SUPERUSER_PASSWORD);
+    }
+
+    /** Why the membership counts: the attribute is not inherited, but SET ROLE reaches it, and with it every tenant. */
+    @Test
+    void aMemberOfASuperuserCanBecomeOne() throws SQLException {
+        try (var connection = LedgerDatabase.as(MEMBER_OF_SUPERUSER_ROLE, MEMBER_OF_SUPERUSER_PASSWORD);
+                var statement = connection.createStatement()) {
+            assertThat(isSuperuser(statement)).isFalse();
+
+            statement.execute("SET ROLE " + LedgerDatabase.superuserName());
+
+            assertThat(isSuperuser(statement)).isTrue();
+        }
+    }
+
+    private static boolean isSuperuser(Statement statement) throws SQLException {
+        try (var rows = statement.executeQuery("SHOW is_superuser")) {
+            assertThat(rows.next()).isTrue();
+            return "on".equals(rows.getString(1));
+        }
+    }
+
+    @Test
+    void theApplicationDoesNotStartAsAMemberOfARoleThatBypassesRowLevelSecurity() throws SQLException {
+        assertRole(MEMBER_OF_BYPASS_ROLE, false, false, false);
+
+        assertRefused(MEMBER_OF_BYPASS_ROLE, MEMBER_OF_BYPASS_PASSWORD, MEMBER_OF_BYPASS_REASON,
+                MEMBER_OF_BYPASS_PASSWORD);
+    }
+
+    @Test
+    void theApplicationDoesNotStartAsTheOwnerOfATableOutsideThePublicSchema() throws SQLException {
+        assertRole(OWNER_ELSEWHERE_ROLE, false, false, false);
+
+        assertRefused(OWNER_ELSEWHERE_ROLE, OWNER_ELSEWHERE_PASSWORD, OWNER_REASON, OWNER_ELSEWHERE_PASSWORD);
+    }
+
+    /** A temporary table belongs to the session that made it and says nothing about the tables of the ledger. */
+    @Test
+    void theApplicationStartsWhileItsRoleHoldsATemporaryTable() throws SQLException {
+        try (var connection = LedgerDatabase.asApplication(); var statement = connection.createStatement()) {
+            statement.execute("CREATE TEMPORARY TABLE held (id integer)");
+            try (var rows = statement.executeQuery("""
+                    SELECT pg_get_userbyid(relowner) FROM pg_class WHERE oid = 'pg_temp.held'::regclass
+                    """)) {
+                assertThat(rows.next()).isTrue();
+                assertThat(rows.getString(1)).isEqualTo("ledger_app");
+            }
+
+            LedgerDatabase.startApplicationAs("ledger_app", "test-only-app").close();
+        }
+    }
+
+    @Test
+    void theApplicationDoesNotStartAsTheOwnerOfASchemaThatHoldsATable() throws SQLException {
+        assertRole(SCHEMA_OWNER_ROLE, false, false, false);
+
+        assertRefused(SCHEMA_OWNER_ROLE, SCHEMA_OWNER_PASSWORD, SCHEMA_OWNER_REASON, SCHEMA_OWNER_PASSWORD);
+    }
+
+    @Test
+    void theApplicationDoesNotStartAsAMemberOfTheOwnerOfASchemaThatHoldsATable() throws SQLException {
+        assertRole(MEMBER_OF_SCHEMA_OWNER_ROLE, false, false, false);
+
+        assertRefused(MEMBER_OF_SCHEMA_OWNER_ROLE, MEMBER_OF_SCHEMA_OWNER_PASSWORD, SCHEMA_OWNER_REASON,
+                MEMBER_OF_SCHEMA_OWNER_PASSWORD);
+    }
+
+    /** Why the schema counts: its owner replaces a table it does not own, and the new table comes without the policy. */
+    @Test
+    void theOwnerOfASchemaCanDropATableItDoesNotOwn() throws SQLException {
+        try (var connection = LedgerDatabase.as(SCHEMA_OWNER_ROLE, SCHEMA_OWNER_PASSWORD);
+                var statement = connection.createStatement()) {
+            connection.setAutoCommit(false);
+
+            statement.execute("DROP TABLE %s.held".formatted(OWNED_SCHEMA));
+            statement.execute("CREATE TABLE %s.held (id integer)".formatted(OWNED_SCHEMA));
+
+            // The rollback restores the table for every other test.
+            connection.rollback();
+        }
+    }
+
+    @Test
+    void theApplicationStartsAsTheOwnerOfASchemaWithoutTables() {
+        LedgerDatabase.startApplicationAs(EMPTY_SCHEMA_OWNER_ROLE, EMPTY_SCHEMA_OWNER_PASSWORD).close();
+    }
+
+    /** The public schema belongs to pg_database_owner, whose only member is whoever owns the database. */
+    @Test
+    void theApplicationDoesNotStartAsTheOwnerOfTheDatabase() {
+        var url = LedgerDatabase.urlOf(OWNED_DATABASE);
+
+        assertRefused(() -> LedgerDatabase.startApplicationAs(url, DATABASE_OWNER_ROLE, DATABASE_OWNER_PASSWORD),
+                DATABASE_OWNER_ROLE, SCHEMA_OWNER_REASON, DATABASE_OWNER_PASSWORD);
+    }
+
+    @Test
+    void theApplicationStartsWithItsOwnRoleOnADatabaseAnotherRoleOwns() {
+        LedgerDatabase.startApplicationAs(LedgerDatabase.urlOf(OWNED_DATABASE), "ledger_app", "test-only-app").close();
     }
 }
