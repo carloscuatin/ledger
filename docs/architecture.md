@@ -13,13 +13,25 @@ side and a positive amount), the immutable `JournalEntry`, which needs at least 
 rejects an entry that does not balance in some currency, and the `Transfer` state machine: a
 sealed set of states (pending, posted, voided, expired) where only a hold can move, posting
 produces the journal entry, and a transfer of unknown state rejects invalid transitions. All of
-them raise unchecked domain errors. Identities, dates, `reversalOf`, hold deadlines, partial
-capture, direct transfers and fees arrive with the change that first needs them.
+them raise unchecked domain errors. Journal entry identities, dates, `reversalOf`, hold deadlines,
+partial capture, direct transfers and fees arrive with the change that first needs them.
 
 Phase 1 has started with the Spring container: `ledger-app` wires its first use case, creating a
-transfer, which opens a hold and refuses a currency the deployment does not operate. The currencies
-come from typed settings validated at startup, so a wrong value stops the application. Profiles,
-persistence and endpoints arrive with their steps.
+transfer, which refuses a currency the deployment does not operate, opens a hold and stores it in
+one transaction. The currencies come from typed settings validated at startup, so a wrong value
+stops the application.
+
+Persistence runs on PostgreSQL with separate database roles. Flyway migrates the schema only in the
+`migrate` profile, under a role of its own that ends up owning the tables. The application connects
+with another role and refuses to start with one that row level security does not apply to: a
+superuser, a role with `BYPASSRLS`, or the owner of a table or a member of that owner. Row level
+security is forced on the `transfer` table. The tenant is bound to a scope (`CurrentTenant`), every
+transaction sets it on its connection, a transaction outside a scope is refused, and a stored row
+takes its tenant from the transaction.
+
+No inbound adapter opens that scope yet, so a running process stores nothing: with no web server,
+the application checks its settings, its role and its schema and exits. The `api` and `batch`
+profiles and the endpoints arrive with their steps.
 
 ## Diagrams
 
@@ -76,7 +88,7 @@ Spring configuration. Level 4 (code) is the code itself.
 | 24 | **Bounded contexts**: Ledger (core), Approvals and Audit (supporting, `ledger-app` modules), Reconciliation (supporting; module in phase 1, service in phase 2), Webhooks (supporting, `webhooks` service) and Identity & Access (generic, `auth-server`). The BFF is an adapter, not a context | Each context has its own language and owns its data; Modulith modules are the boundary in code | A single "ledger" context with everything inside |
 | 25 | **Context map**: Ledger is upstream with an Open Host Service (REST API, including the journal by sequence) and a Published Language (versioned integration events); Reconciliation is its customer. The bank enters Reconciliation through an anti-corruption layer (CSV → `StatementLine`). Webhooks consumes the same Published Language. A discrepancy produces an adjustment proposal that Approvals puts through dual approval before the Ledger posts it. All are Conformist to Identity (OAuth2/OIDC as is) | Explicit relationships say who adapts to whom and where translation happens | Reconciliation reading the ledger's tables |
 | 26 | **Ledger aggregates**: `Account` (class, normal balance, policy; book, held and available balances), `Transfer` (`PENDING` → `POSTED` / `VOIDED` / `EXPIRED`), `JournalEntry` (immutable, ≥2 balancing postings, booking date, value date, `reversalOf`), `BusinessDay` (`OPEN` / `CLOSED`, immutable closing balances), `FeeSchedule` and `AccountPolicy` (changed through dual approval). **Explicit exception**: posting a transfer modifies `Transfer`, two or three `Account`s and creates a `JournalEntry` in one transaction | The "one aggregate per transaction" rule yields to the atomicity of money (decision 5) | A saga across aggregates to move money |
-| 27 | **Multi-tenant**: each fintech is a tenant; every row carries `tenant_id` and Postgres enforces RLS. The app sets the tenant per transaction with `SET LOCAL`, its role has no `BYPASSRLS`, and migrations run with a different role | A query that forgets the filter does not expose another fintech's data: the defense lives in the database, like decision 10 | `tenant_id` filtered only in the app; a schema per tenant (migrations × N) |
+| 27 | **Multi-tenant**: each fintech is a tenant; every row carries `tenant_id` and Postgres enforces RLS, with `FORCE ROW LEVEL SECURITY` so a table's owner is not exempt. The app sets the tenant per transaction with `set_config(..., true)`, the form of `SET LOCAL` that takes parameters, its role has no `BYPASSRLS`, and migrations run with a different role | A query that forgets the filter does not expose another fintech's data: the defense lives in the database, like decision 10 | `tenant_id` filtered only in the app; a schema per tenant (migrations × N) |
 | 28 | **Persistence**: writes with JPA (Hibernate), with JPA entities separate from the domain and mapped in the adapter; reads with `JdbcClient` and SQL returning DTOs through dedicated query ports (light CQRS, same database and same consistency); Flyway | The domain does not depend on JPA; reads do not load aggregates to render tables | Domain aggregates annotated with JPA; an asynchronous read model in the ledger (balances must be consistent immediately) |
 | 29 | **Concurrency**: `READ COMMITTED` with explicit locks. Wallets: balance stored in the row, `SELECT … FOR UPDATE` ordered by id, and `@Version` for policy changes. System accounts (fees, settlement, suspense): no lock and no stored balance; they only receive postings, and their balance is the previous day's closing balance plus the sum of the day's postings | System accounts do not validate balance, so locking them would only serialize every transfer of the tenant; the daily close keeps the sum cheap | `SERIALIZABLE` (retry storms); locking every account; balance split across N rows (complexity with no volume to justify it) |
 | 30 | **Idempotency**: a table keyed by tenant, client and `Idempotency-Key`, with the body hash and the stored response, inserted in the same transaction as the operation. The same key while in progress returns 409; with a different body, 422; the original response is replayed for 24 h | A network retry never moves money twice | Idempotency in a cache outside the transaction |
