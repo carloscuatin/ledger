@@ -93,6 +93,41 @@ public final class TransferRows {
         }
     }
 
+    /** How many rows a tenant really holds, seen past row level security. */
+    public static long countInTheTableFor(UUID tenant) throws SQLException {
+        try (var connection = LedgerDatabase.asSuperuser();
+                var statement = connection.prepareStatement("SELECT count(*) FROM transfer WHERE tenant_id = ?")) {
+            statement.setObject(1, tenant);
+            try (var rows = statement.executeQuery()) {
+                rows.next();
+                return rows.getLong(1);
+            }
+        }
+    }
+
+    /** The tenant a row really belongs to, seen past row level security. */
+    public static UUID tenantOf(UUID id) throws SQLException {
+        return column("tenant_id", id, UUID.class);
+    }
+
+    /** The amount a row really holds, seen past row level security. */
+    public static long amountMinorOf(UUID id) throws SQLException {
+        return column("amount_minor", id, Long.class);
+    }
+
+    private static <T> T column(String name, UUID id, Class<T> type) throws SQLException {
+        try (var connection = LedgerDatabase.asSuperuser();
+                var statement = connection.prepareStatement("SELECT " + name + " FROM transfer WHERE id = ?")) {
+            statement.setObject(1, id);
+            try (var rows = statement.executeQuery()) {
+                if (!rows.next()) {
+                    throw new AssertionError("No transfer " + id);
+                }
+                return rows.getObject(1, type);
+            }
+        }
+    }
+
     static String currentUser(Connection connection) throws SQLException {
         try (var statement = connection.createStatement();
                 var rows = statement.executeQuery("SELECT current_user")) {

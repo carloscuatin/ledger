@@ -93,8 +93,7 @@ class LayersTest {
             .areMetaAnnotatedWith(RestController.class)
             .should()
             .implement(JavaClass.Predicates.resideInAPackage(GENERATED_INTERFACES)
-                    .as("an interface generated from the contract"))
-            .allowEmptyShould(true);
+                    .as("an interface generated from the contract"));
 
     /**
      * A route written by hand is one the contract does not document. Controllers inherit their mappings from the

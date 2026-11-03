@@ -17,14 +17,18 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.SpringBootTest.WebEnvironment;
 import org.springframework.boot.test.system.CapturedOutput;
 import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.boot.test.web.server.LocalServerPort;
+import org.springframework.context.ApplicationContext;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.AuthenticationProvider;
+import org.springframework.security.config.Customizer;
 import org.springframework.security.core.userdetails.UserDetailsService;
+import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -32,6 +36,7 @@ import org.springframework.test.context.DynamicPropertySource;
 import com.carloscuatin.ledgerapp.ledger.adapters.out.persistence.LedgerDatabase;
 import com.carloscuatin.ledgerapp.ledger.adapters.out.persistence.TransferRows;
 
+import jakarta.servlet.Filter;
 import tools.jackson.databind.json.JsonMapper;
 
 /**
@@ -45,6 +50,19 @@ class UnauthenticatedAccessIT {
     private static final JsonMapper JSON = JsonMapper.builder().build();
     private static final HttpClient CLIENT = HttpClient.newHttpClient();
 
+    /** Every filter of the chain, by name and in order, so a new one has to be looked at, whatever it is called. */
+    static final List<String> PRODUCTION_FILTERS = List.of(
+            "DisableEncodeUrlFilter",
+            "WebAsyncManagerIntegrationFilter",
+            "SecurityContextHolderFilter",
+            "HeaderWriterFilter",
+            "RequestCacheAwareFilter",
+            "SecurityContextHolderAwareRequestFilter",
+            "AnonymousAuthenticationFilter",
+            "SessionManagementFilter",
+            "ExceptionTranslationFilter",
+            "AuthorizationFilter");
+
     @DynamicPropertySource
     static void connectAsTheApplication(DynamicPropertyRegistry registry) {
         LedgerDatabase.connectAsTheApplication(registry);
@@ -52,6 +70,12 @@ class UnauthenticatedAccessIT {
 
     @LocalServerPort
     private int port;
+
+    @Autowired
+    private ApplicationContext context;
+
+    @Autowired
+    private SecurityFilterChain chain;
 
     @ParameterizedTest(name = "{0} {1}")
     @CsvSource({
@@ -139,6 +163,30 @@ class UnauthenticatedAccessIT {
 
         assertThat(output.getAll()).doesNotContain("generated security password");
         assertThat(output.getAll().split(":: Spring Boot ::", -1)).hasSize(4);
+    }
+
+    /**
+     * Spring Security applies to the chain any bean of type {@code Customizer<HttpSecurity>}, and of {@code Customizer<T>}
+     * for what a method of {@code HttpSecurity} configures, which is how a test adds its principal. Tests are on the
+     * classpath of the process started here, so this also sees whether one of them could reach it by being scanned.
+     */
+    @Test
+    void nothingCustomizesTheProductionChain() {
+        assertThat(context.getBeanNamesForType(Customizer.class)).isEmpty();
+        try (var api = LedgerDatabase.startApi("ledger_app", "test-only-app", 0)) {
+            assertThat(api.getBeanNamesForType(Customizer.class)).isEmpty();
+        }
+    }
+
+    /**
+     * The anonymous filter is the one that remains close to authenticating, and it is what the rule of the chain refuses:
+     * it marks a request as anonymous, never as authenticated.
+     */
+    @Test
+    void theProductionChainHasNoFilterThatAuthenticates() {
+        assertThat(context.getBeansOfType(SecurityFilterChain.class)).hasSize(1);
+        assertThat(chain.getFilters().stream().map(Filter::getClass).map(Class::getSimpleName))
+                .containsExactlyElementsOf(PRODUCTION_FILTERS);
     }
 
     @Test

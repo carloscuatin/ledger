@@ -12,7 +12,6 @@ import java.util.List;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.BeanCreationException;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -79,10 +78,10 @@ class ApiProfileIT {
     }
 
     @Test
-    @Disabled("Starts until a controller depends on a use case, which this combination of profiles does not build")
     void theApiAndMigrateProfilesTogetherDoNotStart() {
         assertThatThrownBy(LedgerDatabase::startApiAndMigrateProfiles)
-                .isInstanceOf(BeanCreationException.class);
+                .isInstanceOf(BeanCreationException.class)
+                .hasMessageContaining("CreateTransfer");
     }
 
     /**
