@@ -7,6 +7,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.sql.Connection;
 import java.sql.SQLException;
+import java.util.ArrayList;
 import java.util.UUID;
 
 import org.junit.jupiter.api.Test;
@@ -20,6 +21,7 @@ import org.junit.jupiter.params.provider.ValueSource;
 class ApplicationRoleIT {
 
     private static final String INSUFFICIENT_PRIVILEGE = "42501";
+    private static final String UNIQUE_VIOLATION = "23505";
 
     private static Connection connectAsTheApplication() throws SQLException {
         var connection = LedgerDatabase.asApplication();
@@ -87,6 +89,43 @@ class ApplicationRoleIT {
                 assertThat(rows.next()).isTrue();
                 assertThat(rows.getLong(1)).isEqualTo(1);
             }
+        }
+    }
+
+    /** Reads the grants themselves: a grant to PUBLIC or to any other role would pass a check of what this role can do. */
+    @Test
+    void onlyTheApplicationRoleHasGrantsOnTheTableAndTheyAreSelectAndInsert() throws SQLException {
+        var grants = new ArrayList<String>();
+        try (var connection = LedgerDatabase.asSuperuser();
+                var statement = connection.createStatement();
+                var rows = statement.executeQuery("""
+                        SELECT CASE g.grantee WHEN 0 THEN 'PUBLIC' ELSE pg_get_userbyid(g.grantee) END, g.privilege_type
+                        FROM pg_class c, aclexplode(c.relacl) g
+                        WHERE c.oid = 'public.transfer'::regclass AND g.grantee <> c.relowner
+                        UNION ALL
+                        SELECT CASE g.grantee WHEN 0 THEN 'PUBLIC' ELSE pg_get_userbyid(g.grantee) END, g.privilege_type
+                        FROM pg_attribute a, aclexplode(a.attacl) g
+                        WHERE a.attrelid = 'public.transfer'::regclass
+                        """)) {
+            while (rows.next()) {
+                grants.add(rows.getString(1) + " " + rows.getString(2));
+            }
+        }
+
+        assertThat(grants).containsExactlyInAnyOrder("ledger_app SELECT", "ledger_app INSERT");
+    }
+
+    @Test
+    void aDuplicateIdIsRejected() throws SQLException {
+        var tenant = UUID.randomUUID();
+        var id = TransferRows.seed(tenant);
+
+        try (var connection = connectAsTheApplication()) {
+            connection.setAutoCommit(false);
+            setTenant(connection, tenant);
+            assertThatThrownBy(() -> TransferRows.insert(connection, id))
+                    .isInstanceOfSatisfying(SQLException.class, failure -> assertThat(failure.getSQLState())
+                            .isEqualTo(UNIQUE_VIOLATION));
         }
     }
 
