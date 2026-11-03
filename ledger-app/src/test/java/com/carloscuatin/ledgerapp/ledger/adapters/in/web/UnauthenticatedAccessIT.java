@@ -84,7 +84,15 @@ class UnauthenticatedAccessIT {
         "GET, /v1/transfers/00000000-0000-7000-8000-000000000001",
         "GET, /nope",
         "GET, /error",
-        "OPTIONS, /v1/transfers"})
+        "OPTIONS, /v1/transfers",
+        "POST, /transfers",
+        "POST, /1/transfers",
+        "POST, /v1.0/transfers",
+        "POST, /v01/transfers",
+        "POST, /V1/transfers",
+        "POST, /vx/transfers",
+        "POST, /v0/transfers",
+        "POST, /v2/transfers"})
     void everyRouteAnswersUnauthenticatedProblem(String method, String path) throws Exception {
         var response = send(request(path).method(method, BodyPublishers.noBody()));
 
