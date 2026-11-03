@@ -11,7 +11,7 @@ import java.util.UUID;
  * Plain JDBC on the transfer table for tests that must not depend on Spring or JPA: if they fail, the problem is in
  * the database. Each test uses new tenants, so rows left by other tests never get in the way.
  */
-final class TransferRows {
+public final class TransferRows {
 
     private TransferRows() {
     }
@@ -25,7 +25,7 @@ final class TransferRows {
     }
 
     /** Commits one row for a tenant as the application role, and returns its id. */
-    static UUID seed(UUID tenant) throws SQLException {
+    public static UUID seed(UUID tenant) throws SQLException {
         try (var connection = LedgerDatabase.asApplication()) {
             connection.setAutoCommit(false);
             setTenant(connection, tenant);
@@ -80,6 +80,16 @@ final class TransferRows {
             try (var rows = statement.executeQuery()) {
                 return ids(rows);
             }
+        }
+    }
+
+    /** How many rows the table really holds, seen past row level security. */
+    public static long countInTheTable() throws SQLException {
+        try (var connection = LedgerDatabase.asSuperuser();
+                var statement = connection.createStatement();
+                var rows = statement.executeQuery("SELECT count(*) FROM transfer")) {
+            rows.next();
+            return rows.getLong(1);
         }
     }
 

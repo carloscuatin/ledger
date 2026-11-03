@@ -41,7 +41,7 @@ public final class LedgerDatabase {
     }
 
     /** Starts what a deployment runs before the application, as a context the caller closes. */
-    static ConfigurableApplicationContext startMigrateProfile() {
+    public static ConfigurableApplicationContext startMigrateProfile() {
         return new SpringApplicationBuilder(LedgerApplication.class).profiles("migrate")
                 .run(arguments(SERVER.getJdbcUrl(), "ledger_migrator", "test-only-migrator"));
     }
@@ -53,9 +53,21 @@ public final class LedgerDatabase {
     }
 
     /** Starts the application without a profile on a database, as a context the caller closes. */
-    static ConfigurableApplicationContext startApplication(String url) {
+    public static ConfigurableApplicationContext startApplication(String url) {
         return new SpringApplicationBuilder(LedgerApplication.class)
                 .run(arguments(url, "ledger_app", "test-only-app"));
+    }
+
+    /** Starts the server on a port, 0 for any free one, as a context the caller closes. */
+    public static ConfigurableApplicationContext startApi(String username, String password, int port) {
+        return new SpringApplicationBuilder(LedgerApplication.class).profiles("api").run(
+                arguments(SERVER.getJdbcUrl(), username, password, "--server.port=" + port));
+    }
+
+    /** Tries to start the server and the migration in one process, on any free port. */
+    public static ConfigurableApplicationContext startApiAndMigrateProfiles() {
+        return new SpringApplicationBuilder(LedgerApplication.class).profiles("api", "migrate")
+                .run(arguments(SERVER.getJdbcUrl(), "ledger_migrator", "test-only-migrator", "--server.port=0"));
     }
 
     /**
@@ -76,15 +88,15 @@ public final class LedgerDatabase {
                 arguments(SERVER.getJdbcUrl(), username, password, "--spring.main.lazy-initialization=true"));
     }
 
-    static String superuserName() {
+    public static String superuserName() {
         return SERVER.getUsername();
     }
 
-    static String superuserPassword() {
+    public static String superuserPassword() {
         return SERVER.getPassword();
     }
 
-    static String url() {
+    public static String url() {
         return SERVER.getJdbcUrl();
     }
 
@@ -125,7 +137,7 @@ public final class LedgerDatabase {
     }
 
     /** Sees past row level security, so it can only ever be a control that checks what really is in a table. */
-    static Connection asSuperuser() throws SQLException {
+    public static Connection asSuperuser() throws SQLException {
         return asSuperuser(SERVER.getJdbcUrl());
     }
 
