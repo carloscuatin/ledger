@@ -41,7 +41,7 @@ class TransfersController implements TransfersApi {
     public ResponseEntity<Transfer> createTransfer(CreateTransferRequest request) {
         var terms = new TransferTerms(new AccountId(request.sourceAccountId()),
                 new AccountId(request.destinationAccountId()),
-                Money.parse(request.amount(), Currency.getInstance(request.currency())));
+                Money.parse(request.amount(), currencyOf(request.currency())));
 
         var hold = AuthenticatedTenant.call(() -> createTransfer.create(terms));
 
@@ -58,6 +58,20 @@ class TransfersController implements TransfersApi {
     @Override
     public ResponseEntity<TransferPage> listTransfers(@Nullable String cursor, Integer limit) {
         throw new UnsupportedOperationException("Listing transfers is not available");
+    }
+
+    /** The contract fixes the shape of the code, not that it names a currency with minor units. */
+    private static Currency currencyOf(String code) {
+        Currency currency;
+        try {
+            currency = Currency.getInstance(code);
+        } catch (IllegalArgumentException _) {
+            throw new UnusableCurrencyException();
+        }
+        if (currency.getDefaultFractionDigits() < 0) {
+            throw new UnusableCurrencyException();
+        }
+        return currency;
     }
 
     private static Transfer toContract(PendingTransfer hold) {

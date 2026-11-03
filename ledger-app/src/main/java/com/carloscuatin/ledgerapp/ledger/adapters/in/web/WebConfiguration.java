@@ -1,5 +1,8 @@
 package com.carloscuatin.ledgerapp.ledger.adapters.in.web;
 
+import org.springframework.boot.jackson.autoconfigure.JsonFactoryBuilderCustomizer;
+import org.springframework.boot.jackson.autoconfigure.JsonMapperBuilderCustomizer;
+import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Profile;
 import org.springframework.web.method.HandlerTypePredicate;
@@ -8,6 +11,11 @@ import org.springframework.web.servlet.config.annotation.PathMatchConfigurer;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
 import com.carloscuatin.ledger.contract.v1.api.TransfersApi;
+
+import tools.jackson.core.StreamReadConstraints;
+import tools.jackson.databind.cfg.CoercionAction;
+import tools.jackson.databind.cfg.CoercionInputShape;
+import tools.jackson.databind.type.LogicalType;
 
 /**
  * The version of the API lives in the first segment of the path, where a firewall and the access logs can see it. The
@@ -18,8 +26,35 @@ import com.carloscuatin.ledger.contract.v1.api.TransfersApi;
 @Profile("api")
 class WebConfiguration implements WebMvcConfigurer {
 
+    /** Far more than any body of this contract needs, and little enough to be cheap to refuse. */
+    private static final int MAX_BODY_BYTES = 16 * 1024;
+
     /** The one spelling of a version. Without it, Spring reads anything in that segment as a version. */
     private static final String VERSION = "v[1-9][0-9]*";
+
+    /**
+     * A field declared as a string takes only a JSON string. By default Jackson turns a number into its text, so a client
+     * that sends an amount as a number, already rounded by its own parser, would be accepted as if it had been exact.
+     */
+    @Bean
+    JsonMapperBuilderCustomizer onlyAStringIsAString() {
+        return builder -> builder.withCoercionConfig(LogicalType.Textual, config -> {
+            config.setCoercion(CoercionInputShape.Float, CoercionAction.Fail);
+            config.setCoercion(CoercionInputShape.Integer, CoercionAction.Fail);
+            config.setCoercion(CoercionInputShape.Boolean, CoercionAction.Fail);
+        });
+    }
+
+    /**
+     * The server sets no limit on a JSON body. The parser counts what it reads, so this holds for a declared length and
+     * for a chunked body alike, and it stops reading: what would otherwise reach validation, and the log, whole, is cut
+     * here.
+     */
+    @Bean
+    JsonFactoryBuilderCustomizer boundedBody() {
+        return builder -> builder
+                .streamReadConstraints(StreamReadConstraints.builder().maxDocumentLength(MAX_BODY_BYTES).build());
+    }
 
     /**
      * Only a path that names a version is read as one: the first segment of a path outside the API, like the error page,
