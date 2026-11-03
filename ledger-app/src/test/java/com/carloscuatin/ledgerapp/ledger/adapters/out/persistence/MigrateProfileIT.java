@@ -7,6 +7,8 @@ import java.sql.SQLException;
 
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import com.carloscuatin.ledgerapp.ledger.application.CreateTransfer;
 import com.carloscuatin.ledgerapp.ledger.application.IdGenerator;
@@ -19,6 +21,8 @@ import jakarta.persistence.EntityManagerFactory;
  * it left behind in the database.
  */
 class MigrateProfileIT {
+
+    private static final String LAZY_INITIALIZATION = "--spring.main.lazy-initialization=true";
 
     @Test
     void theMigrateProfileRecordsTheMigrationAsApplied() throws SQLException {
@@ -95,13 +99,37 @@ class MigrateProfileIT {
     /** Without this, a wrong location finds nothing to apply and the deployment goes on with a schema nobody migrated. */
     @Test
     void theMigrateProfileFailsWhenTheLocationOfItsMigrationsDoesNotExist() throws SQLException {
-        var url = LedgerDatabase.createEmptyDatabase();
-        try (var connection = LedgerDatabase.asSuperuser(url); var statement = connection.createStatement()) {
-            statement.execute("GRANT USAGE, CREATE ON SCHEMA public TO ledger_migrator");
-        }
+        var url = LedgerDatabase.createEmptyDatabaseForTheMigrator();
 
         assertThatThrownBy(() -> LedgerDatabase.startMigrateProfile(url, "--spring.flyway.locations=classpath:missing"))
                 .hasStackTraceContaining("Unable to resolve location classpath:missing");
+    }
+
+    /**
+     * Migrating happens when the initializer is created, and in this process nothing else asks for it: a lazy context
+     * would start, do nothing and report success.
+     */
+    @Test
+    void theMigrateProfileMigratesWithLazyInitialization() throws SQLException {
+        var url = LedgerDatabase.createEmptyDatabaseForTheMigrator();
+
+        LedgerDatabase.startMigrateProfile(url, LAZY_INITIALIZATION).close();
+
+        assertThat(LedgerDatabase.appliedMigrations(url)).contains("1");
+        assertThat(LedgerDatabase.tableExists(url, "transfer")).isTrue();
+    }
+
+    /** Switching Flyway off is a deliberate choice of whoever runs the process, and it must keep meaning just that. */
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void theMigrateProfileWithFlywaySwitchedOffStartsAndMigratesNothing(boolean lazy) throws SQLException {
+        var url = LedgerDatabase.createEmptyDatabaseForTheMigrator();
+
+        LedgerDatabase.startMigrateProfile(url, "--spring.flyway.enabled=false",
+                "--spring.main.lazy-initialization=" + lazy).close();
+
+        assertThat(LedgerDatabase.tableExists(url, "flyway_schema_history")).isFalse();
+        assertThat(LedgerDatabase.tableExists(url, "transfer")).isFalse();
     }
 
     private static int appliedMigrations() throws SQLException {

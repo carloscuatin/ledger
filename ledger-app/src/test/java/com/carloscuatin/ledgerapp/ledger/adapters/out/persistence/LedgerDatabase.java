@@ -64,10 +64,9 @@ public final class LedgerDatabase {
                 arguments(SERVER.getJdbcUrl(), username, password, "--server.port=" + port));
     }
 
-    /** Tries to start the server and the migration in one process, on any free port. */
-    public static ConfigurableApplicationContext startApiAndMigrateProfiles() {
-        return new SpringApplicationBuilder(LedgerApplication.class).profiles("api", "migrate")
-                .run(arguments(SERVER.getJdbcUrl(), "ledger_migrator", "test-only-migrator", "--server.port=0"));
+    /** The command line of a process that connects to a database as the migrator. */
+    public static String[] argumentsAsTheMigrator(String url, String... extraArguments) {
+        return arguments(url, "ledger_migrator", "test-only-migrator", extraArguments);
     }
 
     /**
@@ -107,6 +106,43 @@ public final class LedgerDatabase {
             statement.execute("CREATE DATABASE " + name);
         }
         return urlOf(name);
+    }
+
+    /** An empty database where the migrator may create objects, which it can only do after being granted that. */
+    public static String createEmptyDatabaseForTheMigrator() throws SQLException {
+        var url = createEmptyDatabase();
+        try (var connection = asSuperuser(url); var statement = connection.createStatement()) {
+            statement.execute("GRANT USAGE, CREATE ON SCHEMA public TO ledger_migrator");
+        }
+        return url;
+    }
+
+    /** The versions a database records as successfully applied, empty when it has no migration history at all. */
+    public static List<String> appliedMigrations(String url) throws SQLException {
+        if (!tableExists(url, "flyway_schema_history")) {
+            return List.of();
+        }
+        try (var connection = asSuperuser(url);
+                var statement = connection.createStatement();
+                var rows = statement.executeQuery(
+                        "SELECT version FROM flyway_schema_history WHERE success ORDER BY installed_rank")) {
+            var versions = new ArrayList<String>();
+            while (rows.next()) {
+                versions.add(rows.getString(1));
+            }
+            return versions;
+        }
+    }
+
+    public static boolean tableExists(String url, String table) throws SQLException {
+        try (var connection = asSuperuser(url);
+                var statement = connection.prepareStatement("SELECT to_regclass(?)")) {
+            statement.setString(1, "public." + table);
+            try (var rows = statement.executeQuery()) {
+                rows.next();
+                return rows.getString(1) != null;
+            }
+        }
     }
 
     static String urlOf(String database) {
