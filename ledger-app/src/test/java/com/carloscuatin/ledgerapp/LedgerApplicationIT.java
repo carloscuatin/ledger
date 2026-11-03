@@ -16,9 +16,11 @@ import org.springframework.test.context.DynamicPropertySource;
 import com.carloscuatin.ledgerapp.ledger.adapters.config.LedgerProperties;
 import com.carloscuatin.ledgerapp.ledger.adapters.out.persistence.LedgerDatabase;
 import com.carloscuatin.ledgerapp.ledger.application.CreateTransfer;
+import com.carloscuatin.ledgerapp.ledger.application.CurrentTenant;
 import com.carloscuatin.ledgerapp.ledger.domain.AccountId;
 import com.carloscuatin.ledgerapp.ledger.domain.CurrencyNotEnabledException;
 import com.carloscuatin.ledgerapp.ledger.domain.Money;
+import com.carloscuatin.ledgerapp.ledger.domain.TenantId;
 import com.carloscuatin.ledgerapp.ledger.domain.TransferTerms;
 
 /**
@@ -58,7 +60,9 @@ class LedgerApplicationIT {
         var dollars = new TransferTerms(SOURCE, DESTINATION, Money.parse("100.00", Currency.getInstance("USD")));
 
         assertThat(environment.getActiveProfiles()).isEmpty();
-        assertThat(createTransfer.create(pesos).terms()).isEqualTo(pesos);
-        assertThatThrownBy(() -> createTransfer.create(dollars)).isInstanceOf(CurrencyNotEnabledException.class);
+        var tenant = new TenantId(UUID.randomUUID());
+        assertThat(CurrentTenant.callAs(tenant, () -> createTransfer.create(pesos)).terms()).isEqualTo(pesos);
+        assertThatThrownBy(() -> CurrentTenant.callAs(tenant, () -> createTransfer.create(dollars)))
+                .isInstanceOf(CurrencyNotEnabledException.class);
     }
 }

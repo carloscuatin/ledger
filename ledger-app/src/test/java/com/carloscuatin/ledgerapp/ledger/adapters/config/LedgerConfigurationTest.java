@@ -16,6 +16,7 @@ import org.springframework.core.env.SystemEnvironmentPropertySource;
 
 import com.carloscuatin.ledgerapp.ledger.application.CreateTransfer;
 import com.carloscuatin.ledgerapp.ledger.application.IdGenerator;
+import com.carloscuatin.ledgerapp.ledger.application.Transfers;
 import com.carloscuatin.ledgerapp.ledger.domain.AccountId;
 import com.carloscuatin.ledgerapp.ledger.domain.CurrencyNotEnabledException;
 import com.carloscuatin.ledgerapp.ledger.domain.Money;
@@ -28,7 +29,9 @@ class LedgerConfigurationTest {
 
     private final ApplicationContextRunner runner = new ApplicationContextRunner()
             .withUserConfiguration(LedgerConfiguration.class)
-            .withBean(IdGenerator.class, () -> UUID::randomUUID);
+            .withBean(IdGenerator.class, () -> UUID::randomUUID)
+            .withBean(Transfers.class, () -> hold -> {
+            });
 
     @Test
     void theEnabledCurrenciesBindFromTheirProperty() {
