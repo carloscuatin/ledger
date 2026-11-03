@@ -10,6 +10,8 @@ import org.junit.jupiter.api.Test;
 import com.carloscuatin.ledgerapp.ledger.application.CreateTransfer;
 import com.carloscuatin.ledgerapp.ledger.application.IdGenerator;
 
+import jakarta.persistence.EntityManagerFactory;
+
 /**
  * The profile runs for real when {@link LedgerDatabase} starts, the way a deployment runs it, so these tests read what
  * it left behind in the database.
@@ -77,8 +79,9 @@ class MigrateProfileIT {
     }
 
     @Test
-    void theMigrateProcessBuildsNoUseCaseNorPort() {
+    void theMigrateProcessBuildsNeitherTheOrmNorAUseCaseNorAPort() {
         try (var context = LedgerDatabase.startMigrateProfile()) {
+            assertThat(context.getBeansOfType(EntityManagerFactory.class)).isEmpty();
             assertThat(context.getBeansOfType(CreateTransfer.class)).isEmpty();
             assertThat(context.getBeansOfType(IdGenerator.class)).isEmpty();
         }
