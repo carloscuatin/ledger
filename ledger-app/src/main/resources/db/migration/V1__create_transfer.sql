@@ -13,7 +13,8 @@ CREATE TABLE transfer (
     source_account_id      uuid NOT NULL,
     destination_account_id uuid NOT NULL,
     amount_minor           bigint NOT NULL CHECK (amount_minor > 0),
-    currency               char(3) NOT NULL,
+    -- char(3) pads a shorter value with spaces before the check, and a regular expression sees those spaces.
+    currency               char(3) NOT NULL CHECK (currency ~ '^[A-Z]{3}$'),
     status                 text NOT NULL CHECK (status IN ('PENDING', 'POSTED', 'VOIDED', 'EXPIRED')),
     CHECK (source_account_id <> destination_account_id)
 );

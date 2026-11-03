@@ -49,23 +49,37 @@ class TransferSchemaIT {
                 .hasMessageContaining("transfer_status_check");
     }
 
+    /** A code shorter than the column is padded with spaces before the check sees it, so it does not fit either. */
+    @ParameterizedTest
+    @ValueSource(strings = {"cop", "A", "C0P", "ÑOP"})
+    void aCurrencyThatIsNotThreeUppercaseLettersIsRejected(String currency) {
+        assertThatThrownBy(() -> insert(source, destination, 1, "PENDING", currency))
+                .isInstanceOfSatisfying(SQLException.class, TransferSchemaIT::isACheckViolation)
+                .hasMessageContaining("transfer_currency_check");
+    }
+
     private static void isACheckViolation(SQLException failure) {
         assertThat(failure.getSQLState()).isEqualTo(CHECK_VIOLATION);
     }
 
     private static void insert(UUID from, UUID to, long amount, String status) throws SQLException {
+        insert(from, to, amount, status, "COP");
+    }
+
+    private static void insert(UUID from, UUID to, long amount, String status, String currency) throws SQLException {
         try (var connection = LedgerDatabase.asApplication()) {
             connection.setAutoCommit(false);
             TransferRows.setTenant(connection, UUID.randomUUID());
             try (var insert = connection.prepareStatement("""
                     INSERT INTO transfer (id, source_account_id, destination_account_id, amount_minor, currency, status)
-                    VALUES (?, ?, ?, ?, 'COP', ?)
+                    VALUES (?, ?, ?, ?, ?, ?)
                     """)) {
                 insert.setObject(1, UUID.randomUUID());
                 insert.setObject(2, from);
                 insert.setObject(3, to);
                 insert.setLong(4, amount);
-                insert.setString(5, status);
+                insert.setString(5, currency);
+                insert.setString(6, status);
                 insert.executeUpdate();
             } finally {
                 connection.rollback();
