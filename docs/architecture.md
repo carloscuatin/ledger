@@ -23,11 +23,11 @@ stops the application.
 
 Persistence runs on PostgreSQL with separate database roles. Flyway migrates the schema only in the
 `migrate` profile, under a role of its own that ends up owning the tables. The application connects
-with another role and refuses to start with one that row level security does not apply to: a
-superuser, a role with `BYPASSRLS`, or the owner of a table or a member of that owner. Row level
-security is forced on the `transfer` table. The tenant is bound to a scope (`CurrentTenant`), every
-transaction sets it on its connection, a transaction outside a scope is refused, and a stored row
-takes its tenant from the transaction.
+with another role and refuses to start with one that can get past row level security: a superuser,
+a role with `BYPASSRLS`, the owner of a table or of a schema that holds a table, or a member of any
+of those, in every schema except the system ones. Row level security is forced on the `transfer`
+table. The tenant is bound to a scope (`CurrentTenant`), every transaction sets it on its connection,
+a transaction outside a scope is refused, and a stored row takes its tenant from the transaction.
 
 No inbound adapter opens that scope yet, so a running process stores nothing: with no web server,
 the application checks its settings, its role and its schema and exits. The `api` and `batch`

@@ -77,12 +77,16 @@ Two processes use the database, with the same three settings and a role each, in
 1. `SPRING_PROFILES_ACTIVE=migrate`, with the role that owns the schema: applies the Flyway
    migrations in `ledger-app/src/main/resources/db/migration` and exits. An administrator creates
    both roles before the first migration.
-2. No profile, with the application role.
+2. No profile, with the application role. The migration grants access to `ledger_app` by name, so
+   that is the name of this role: any other role starts, because starting reads no rows, and fails
+   on its first access to a table.
 
 The application does not start without connection settings, against a schema that does not match its
-mapping (a database not yet migrated included), or with a role that row level security does not
-apply to: a superuser, a role with `BYPASSRLS`, or the owner of a table in the `public` schema or a
-member of that owner. The report names the cause.
+mapping (a database not yet migrated included), or with a role that can get past row level security:
+a superuser, a role with `BYPASSRLS`, the owner of a table or of a schema that holds a table, or a
+member of any of those. Every schema counts except the system ones. So does owning the database,
+because the `public` schema belongs to `pg_database_owner`, whose member is the database's owner. The
+report names the cause.
 
 The application has no web server, so when every check passes nothing keeps the process alive: it
 starts and exits by itself with status 0. That is a successful run, not a crash.
