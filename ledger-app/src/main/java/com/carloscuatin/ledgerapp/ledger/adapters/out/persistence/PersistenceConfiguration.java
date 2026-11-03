@@ -3,6 +3,7 @@ package com.carloscuatin.ledgerapp.ledger.adapters.out.persistence;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Profile;
+import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.orm.jpa.JpaVendorAdapter;
 import org.springframework.orm.jpa.vendor.HibernateJpaDialect;
 import org.springframework.orm.jpa.vendor.HibernateJpaVendorAdapter;
@@ -30,6 +31,11 @@ class PersistenceConfiguration {
                 return dialect;
             }
         };
+    }
+
+    @Bean
+    DatabaseRoleGuard databaseRoleGuard(JdbcClient jdbc) {
+        return new DatabaseRoleGuard(jdbc);
     }
 
     @Bean

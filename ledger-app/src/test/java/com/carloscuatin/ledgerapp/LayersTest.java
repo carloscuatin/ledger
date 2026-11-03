@@ -5,7 +5,10 @@ import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
 
 import org.jspecify.annotations.NullMarked;
 
+import com.carloscuatin.ledgerapp.ledger.application.CurrentTenant;
+import com.tngtech.archunit.core.domain.JavaAccess;
 import com.tngtech.archunit.core.domain.JavaClass;
+import com.tngtech.archunit.core.domain.properties.HasName;
 import com.tngtech.archunit.core.importer.ImportOption;
 import com.tngtech.archunit.junit.AnalyzeClasses;
 import com.tngtech.archunit.junit.ArchTest;
@@ -43,6 +46,18 @@ class LayersTest {
             .dependOnClassesThat()
             .resideInAPackage("..adapters..")
             .allowEmptyShould(true);
+
+    /**
+     * A tenant comes from outside the application, so only what receives work from outside may open its scope. Tests are
+     * not imported here, so they can open one with the same call. Any access counts, a method reference as well as a call.
+     */
+    @ArchTest
+    static final ArchRule onlyInboundAdaptersOpenATenantScope = noClasses()
+            .that()
+            .resideOutsideOfPackage("..adapters.in..")
+            .should()
+            .accessTargetWhere(JavaAccess.Predicates.target(HasName.Predicates.name("callAs"))
+                    .and(JavaAccess.Predicates.targetOwner(JavaClass.Predicates.type(CurrentTenant.class))));
 
     /**
      * NullAway only checks packages marked {@code @NullMarked}, and the annotation does not reach subpackages, so a

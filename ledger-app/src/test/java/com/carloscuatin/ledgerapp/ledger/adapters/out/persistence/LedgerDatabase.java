@@ -50,6 +50,26 @@ public final class LedgerDatabase {
                 .run(arguments(url, "ledger_app", "test-only-app"));
     }
 
+    /**
+     * Tries to start the application with any role on the migrated database. Only for tests of the check that refuses
+     * the wrong roles; every other context runs as the application role.
+     */
+    static ConfigurableApplicationContext startApplicationAs(String username, String password) {
+        return startApplicationAs(SERVER.getJdbcUrl(), username, password);
+    }
+
+    static ConfigurableApplicationContext startApplicationAs(String url, String username, String password) {
+        return new SpringApplicationBuilder(LedgerApplication.class).run(arguments(url, username, password));
+    }
+
+    static String superuserName() {
+        return SERVER.getUsername();
+    }
+
+    static String superuserPassword() {
+        return SERVER.getPassword();
+    }
+
     static String url() {
         return SERVER.getJdbcUrl();
     }
@@ -70,6 +90,10 @@ public final class LedgerDatabase {
             "--spring.datasource.username=" + username,
             "--spring.datasource.password=" + password
         };
+    }
+
+    static Connection as(String username, String password) throws SQLException {
+        return DriverManager.getConnection(SERVER.getJdbcUrl(), username, password);
     }
 
     static Connection asApplication() throws SQLException {

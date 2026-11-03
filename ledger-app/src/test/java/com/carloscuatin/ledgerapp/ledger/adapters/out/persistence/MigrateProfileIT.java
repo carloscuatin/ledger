@@ -88,6 +88,7 @@ class MigrateProfileIT {
             assertThat(context.getBeansOfType(CreateTransfer.class)).isEmpty();
             assertThat(context.getBeansOfType(IdGenerator.class)).isEmpty();
             assertThat(context.getBeansOfType(Transfers.class)).isEmpty();
+            assertThat(context.getBeansOfType(DatabaseRoleGuard.class)).isEmpty();
         }
     }
 
