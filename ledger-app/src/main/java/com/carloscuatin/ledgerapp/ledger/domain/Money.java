@@ -11,6 +11,12 @@ import java.util.Objects;
  */
 public record Money(long minorUnits, Currency currency) {
 
+    /**
+     * Longer than any amount a long can hold, with its point and decimals, and with room for leading zeros. Building a
+     * BigDecimal costs time quadratic in the digits it reads, so a longer text is refused without building one.
+     */
+    private static final int MAX_AMOUNT_LENGTH = 32;
+
     public Money {
         scaleOf(currency);
     }
@@ -26,6 +32,9 @@ public record Money(long minorUnits, Currency currency) {
     public static Money parse(String amount, Currency currency) {
         Objects.requireNonNull(amount, "amount");
         int scale = scaleOf(currency);
+        if (amount.length() > MAX_AMOUNT_LENGTH) {
+            throw new InvalidAmountException(amount, currency);
+        }
         if (!amount.matches("-?\\d+(\\.\\d+)?")) {
             throw new InvalidAmountException(amount, currency);
         }

@@ -2,8 +2,10 @@ package com.carloscuatin.ledgerapp.ledger.domain;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 
 import java.math.BigDecimal;
+import java.time.Duration;
 import java.util.Currency;
 
 import org.junit.jupiter.api.Test;
@@ -140,6 +142,64 @@ class MoneyTest {
         assertThatThrownBy(() -> Money.parse(null, COP))
                 .isInstanceOf(NullPointerException.class)
                 .hasMessage("amount");
+    }
+
+    @Test
+    void theMessageOfALongInvalidAmountIsBounded() {
+        var text = "x".repeat(32) + "Y" + "z".repeat(99_967);
+
+        assertThatThrownBy(() -> Money.parse(text, COP))
+                .isInstanceOf(InvalidAmountException.class)
+                .hasMessageContaining("x".repeat(32))
+                .hasMessageContaining("100000")
+                .hasMessageNotContaining("Y")
+                .hasMessageNotContaining("z")
+                .satisfies(error -> assertThat(error.getMessage()).hasSizeLessThanOrEqualTo(100));
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {1, 31, 32})
+    void theMessageOfAShortInvalidAmountKeepsTheWholeText(int length) {
+        var text = "x".repeat(length);
+
+        assertThatThrownBy(() -> Money.parse(text, COP))
+                .isInstanceOf(InvalidAmountException.class)
+                .hasMessageContaining("'" + text + "'")
+                .hasMessageNotContaining("characters");
+    }
+
+    @Test
+    void oneCharacterOverTheLimitIsCutInTheMessage() {
+        var text = "x".repeat(32) + "Y";
+
+        assertThatThrownBy(() -> Money.parse(text, COP))
+                .isInstanceOf(InvalidAmountException.class)
+                .hasMessageContaining("33 characters")
+                .hasMessageNotContaining("Y");
+    }
+
+    @Test
+    void aVeryLongTextIsRejectedImmediately() {
+        var text = "7".repeat(1_000_000);
+
+        assertTimeoutPreemptively(Duration.ofSeconds(1), () -> assertThatThrownBy(() -> Money.parse(text, COP))
+                .isInstanceOf(InvalidAmountException.class));
+    }
+
+    @Test
+    void theLongestAcceptedTextStillParses() {
+        var text = "0".repeat(23) + "150000.50";
+
+        assertThat(text).hasSize(32);
+        assertThat(Money.parse(text, COP)).isEqualTo(Money.ofMinor(15_000_050, COP));
+    }
+
+    @Test
+    void oneCharacterOverTheLimitIsRejected() {
+        var text = "0".repeat(24) + "150000.50";
+
+        assertThat(text).hasSize(33);
+        assertThatThrownBy(() -> Money.parse(text, COP)).isInstanceOf(InvalidAmountException.class);
     }
 
     @Test
