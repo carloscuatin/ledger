@@ -8,6 +8,9 @@ import org.springframework.orm.jpa.vendor.HibernateJpaDialect;
 import org.springframework.orm.jpa.vendor.HibernateJpaVendorAdapter;
 
 import com.carloscuatin.ledgerapp.ledger.application.IdGenerator;
+import com.carloscuatin.ledgerapp.ledger.application.Transfers;
+
+import jakarta.persistence.EntityManager;
 
 /**
  * Offers the outbound adapters of the ledger module to the container, as the ports the use cases declare. The adapter
@@ -27,6 +30,11 @@ class PersistenceConfiguration {
                 return dialect;
             }
         };
+    }
+
+    @Bean
+    Transfers transfers(EntityManager entityManager) {
+        return new JpaTransfers(entityManager);
     }
 
     @Bean

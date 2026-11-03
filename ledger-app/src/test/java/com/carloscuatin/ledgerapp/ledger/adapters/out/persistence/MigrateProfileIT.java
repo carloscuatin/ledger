@@ -1,6 +1,7 @@
 package com.carloscuatin.ledgerapp.ledger.adapters.out.persistence;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.sql.SQLException;
 
@@ -9,6 +10,7 @@ import org.junit.jupiter.api.Test;
 
 import com.carloscuatin.ledgerapp.ledger.application.CreateTransfer;
 import com.carloscuatin.ledgerapp.ledger.application.IdGenerator;
+import com.carloscuatin.ledgerapp.ledger.application.Transfers;
 
 import jakarta.persistence.EntityManagerFactory;
 
@@ -65,10 +67,11 @@ class MigrateProfileIT {
     }
 
     @Test
-    void aProcessWithoutTheProfileLeavesAnEmptyDatabaseWithoutAMigrationHistory() throws SQLException {
+    void aProcessWithoutTheProfileRefusesAnEmptyDatabaseAndLeavesItWithoutAMigrationHistory() throws SQLException {
         var url = LedgerDatabase.createEmptyDatabase();
 
-        LedgerDatabase.startApplication(url).close();
+        assertThatThrownBy(() -> LedgerDatabase.startApplication(url))
+                .hasStackTraceContaining("Schema validation: missing table [transfer]");
 
         try (var connection = LedgerDatabase.asSuperuser(url);
                 var statement = connection.createStatement();
@@ -79,11 +82,12 @@ class MigrateProfileIT {
     }
 
     @Test
-    void theMigrateProcessBuildsNeitherTheOrmNorAUseCaseNorAPort() {
+    void theMigrateProcessBuildsNeitherTheOrmNorAUseCaseNorItsPorts() {
         try (var context = LedgerDatabase.startMigrateProfile()) {
             assertThat(context.getBeansOfType(EntityManagerFactory.class)).isEmpty();
             assertThat(context.getBeansOfType(CreateTransfer.class)).isEmpty();
             assertThat(context.getBeansOfType(IdGenerator.class)).isEmpty();
+            assertThat(context.getBeansOfType(Transfers.class)).isEmpty();
         }
     }
 

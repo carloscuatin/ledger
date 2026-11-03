@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.sql.Connection;
 import java.sql.SQLException;
+import java.util.Currency;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -30,8 +31,16 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import com.carloscuatin.ledgerapp.ledger.application.CurrentTenant;
+import com.carloscuatin.ledgerapp.ledger.application.Transfers;
+import com.carloscuatin.ledgerapp.ledger.domain.AccountId;
+import com.carloscuatin.ledgerapp.ledger.domain.Money;
+import com.carloscuatin.ledgerapp.ledger.domain.PendingTransfer;
 import com.carloscuatin.ledgerapp.ledger.domain.TenantId;
+import com.carloscuatin.ledgerapp.ledger.domain.TransferId;
+import com.carloscuatin.ledgerapp.ledger.domain.TransferTerms;
 import com.zaxxer.hikari.HikariDataSource;
+
+import jakarta.persistence.EntityManager;
 
 /**
  * With a pool of one connection there is nowhere else for a statement to run: a second connection would wait until the
@@ -84,6 +93,12 @@ class TenantTransactionIT {
 
     @Autowired
     private DataSource dataSource;
+
+    @Autowired
+    private Transfers transfers;
+
+    @Autowired
+    private EntityManager entityManager;
 
     private final TenantId tenantA = new TenantId(UUID.randomUUID());
     private final TenantId tenantB = new TenantId(UUID.randomUUID());
@@ -200,6 +215,41 @@ class TenantTransactionIT {
         var visible = CurrentTenant.callAs(tenantA, () -> readOnlyTransaction().execute(status -> visibleRows()));
 
         assertThat(visible).containsExactly(row);
+    }
+
+    @Test
+    void aWriteThroughJpaSharesItsConnectionAndTenantWithJdbcOnceFlushed() throws SQLException {
+        var hold = new PendingTransfer(new TransferId(UUID.randomUUID()), new TransferTerms(
+                new AccountId(UUID.randomUUID()), new AccountId(UUID.randomUUID()),
+                Money.parse("1", Currency.getInstance("JPY"))));
+        var row = hold.id().value();
+        var pid = new AtomicInteger();
+
+        CurrentTenant.callAs(tenantA, () -> transaction().execute(status -> {
+            transfers.add(hold);
+            // Nothing has reached the database yet, and JDBC does not make JPA flush.
+            assertThat(visibleRows()).isEmpty();
+
+            entityManager.flush();
+
+            pid.set(backendPid());
+            assertThat(sessionTenant()).isEqualTo(tenantA.value());
+            assertThat(visibleRows()).containsExactly(row);
+            assertThatTheControlFinds(row, false);
+            return null;
+        }));
+
+        assertThatTheControlFinds(row, true);
+        assertThat(backendPid()).isEqualTo(pid.get());
+    }
+
+    /** The control has a connection of its own, so it only sees what has been committed. */
+    private static void assertThatTheControlFinds(UUID row, boolean found) {
+        try {
+            assertThat(TransferRows.idsInTheTable(row).contains(row)).isEqualTo(found);
+        } catch (SQLException e) {
+            throw new IllegalStateException(e);
+        }
     }
 
     private void assertRowsInATransaction(TenantId tenant, UUID row, int pid) {
