@@ -44,6 +44,8 @@ import com.carloscuatin.ledgerapp.ledger.adapters.out.persistence.LedgerDatabase
 import com.carloscuatin.ledgerapp.ledger.adapters.out.persistence.TransferRows;
 import com.carloscuatin.ledgerapp.ledger.application.CreateTransfer;
 import com.carloscuatin.ledgerapp.ledger.application.CurrentTenant;
+import com.carloscuatin.ledgerapp.ledger.application.FindTransfer;
+import com.carloscuatin.ledgerapp.ledger.application.TransferQueries;
 import com.carloscuatin.ledgerapp.ledger.application.Transfers;
 import com.carloscuatin.ledgerapp.ledger.domain.TenantId;
 import com.zaxxer.hikari.HikariDataSource;
@@ -86,12 +88,13 @@ class TransactionBoundaryIT {
     private static ConfigurableApplicationContext api;
     private static HikariDataSource pool;
 
-    private record Moment(String where, boolean transaction, boolean session, Optional<TenantId> tenant,
-            Thread thread) {
+    private record Moment(String where, boolean transaction, boolean readOnly, boolean session,
+            Optional<TenantId> tenant, Thread thread) {
 
         static void record(String where) {
             MOMENTS.add(
-                    new Moment(where, TransactionSynchronizationManager.isActualTransactionActive(), sessionIsOpen(),
+                    new Moment(where, TransactionSynchronizationManager.isActualTransactionActive(),
+                            TransactionSynchronizationManager.isCurrentTransactionReadOnly(), sessionIsOpen(),
                             tenantInScope(), Thread.currentThread()));
         }
 
@@ -146,6 +149,18 @@ class TransactionBoundaryIT {
         ((Advised) api.getBean(Transfers.class)).addAdvice(0, (MethodInterceptor) invocation -> {
             Moment.record(IN_THE_PORT);
             keepTheConnectionUntilAnotherRequestQueuesForIt();
+            return invocation.proceed();
+        });
+        ((Advised) api.getBean(FindTransfer.class)).addAdvice(0, (MethodInterceptor) invocation -> {
+            Moment.record(BEFORE_THE_USE_CASE);
+            try {
+                return invocation.proceed();
+            } finally {
+                Moment.record(AFTER_THE_USE_CASE);
+            }
+        });
+        ((Advised) api.getBean(TransferQueries.class)).addAdvice(0, (MethodInterceptor) invocation -> {
+            Moment.record(IN_THE_PORT);
             return invocation.proceed();
         });
     }
@@ -211,6 +226,34 @@ class TransactionBoundaryIT {
                 tuple(AFTER_THE_CONTROLLER, false, Optional.empty()));
     }
 
+    /**
+     * A write that joins a read only transaction is lost without any error, because nothing flushes it. A read and a
+     * write only meet if something opens a transaction around both, and each of these requests shows there is none.
+     */
+    @Test
+    void aReadOnlyTransactionBelongsToTheReadAndNeverToACreation() throws Exception {
+        var tenant = UUID.randomUUID();
+        var inScope = Optional.of(new TenantId(tenant));
+        var created = createATransferAs(tenant);
+        assertThat(created.statusCode()).isEqualTo(201);
+
+        assertThat(MOMENTS).filteredOn(moment -> IN_THE_PORT.equals(moment.where()))
+                .extracting(Moment::transaction, Moment::readOnly).containsExactly(tuple(true, false));
+        MOMENTS.clear();
+
+        var id = JSON.readTree(created.body()).path("id").asString();
+        var read = CLIENT.send(readingATransferAs(tenant, id), BodyHandlers.ofString());
+
+        assertThat(read.statusCode()).isEqualTo(200);
+        assertThat(MOMENTS).extracting(Moment::where, Moment::transaction, Moment::readOnly, Moment::tenant)
+                .containsExactly(
+                        tuple(BEFORE_THE_CONTROLLER, false, false, Optional.empty()),
+                        tuple(BEFORE_THE_USE_CASE, false, false, inScope),
+                        tuple(IN_THE_PORT, true, true, inScope),
+                        tuple(AFTER_THE_USE_CASE, false, false, inScope),
+                        tuple(AFTER_THE_CONTROLLER, false, false, Optional.empty()));
+    }
+
     @Test
     void aRequestRunsOnOneVirtualThreadOfTheServer() throws Exception {
         assertThat(createATransferAs(UUID.randomUUID()).statusCode()).isEqualTo(201);
@@ -254,6 +297,13 @@ class TransactionBoundaryIT {
 
     private static HttpResponse<String> createATransferAs(UUID tenant) throws Exception {
         return CLIENT.send(creatingATransferAs(tenant), BodyHandlers.ofString());
+    }
+
+    private static HttpRequest readingATransferAs(UUID tenant, String id) {
+        var port = ((WebServerApplicationContext) api).getWebServer().getPort();
+        return HttpRequest.newBuilder(URI.create("http://127.0.0.1:%d%s/%s".formatted(port, TRANSFERS, id)))
+                .header(TestAuthentication.PRINCIPAL_HEADER, tenant.toString())
+                .build();
     }
 
     private static HttpRequest creatingATransferAs(UUID tenant) {

@@ -12,11 +12,13 @@ import org.junit.jupiter.params.provider.ValueSource;
 
 import com.carloscuatin.ledger.contract.v1.model.CreateTransferRequest;
 import com.carloscuatin.ledgerapp.ledger.application.CreateTransfer;
+import com.carloscuatin.ledgerapp.ledger.application.FindTransfer;
 
 class TransfersControllerTest {
 
     private final CreateTransfer createTransfer = mock();
-    private final TransfersController controller = new TransfersController(createTransfer);
+    private final FindTransfer findTransfer = mock();
+    private final TransfersController controller = new TransfersController(createTransfer, findTransfer);
 
     /** ZZZ does not exist and XAU has no minor units: the JDK and the domain refuse each with a generic exception. */
     @ParameterizedTest

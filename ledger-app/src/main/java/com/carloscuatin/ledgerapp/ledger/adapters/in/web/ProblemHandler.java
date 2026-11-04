@@ -27,6 +27,7 @@ import com.carloscuatin.ledgerapp.ledger.domain.CurrencyNotEnabledException;
 import com.carloscuatin.ledgerapp.ledger.domain.InvalidAmountException;
 import com.carloscuatin.ledgerapp.ledger.domain.NonPositiveAmountException;
 import com.carloscuatin.ledgerapp.ledger.domain.SameAccountTransferException;
+import com.carloscuatin.ledgerapp.ledger.domain.TransferNotFoundException;
 
 import jakarta.validation.constraints.NotNull;
 
@@ -57,6 +58,12 @@ class ProblemHandler extends ResponseEntityExceptionHandler {
     @ExceptionHandler(SameAccountTransferException.class)
     ResponseEntity<Object> sameAccount(WebRequest request) {
         return answer(ProblemType.SAME_ACCOUNT, request);
+    }
+
+    /** The body is the same for a transfer that does not exist and for one of another tenant, so nothing tells them apart. */
+    @ExceptionHandler(TransferNotFoundException.class)
+    ResponseEntity<Object> notFound(WebRequest request) {
+        return answer(ProblemType.NOT_FOUND, request);
     }
 
     @ExceptionHandler(TenantRequiredException.class)

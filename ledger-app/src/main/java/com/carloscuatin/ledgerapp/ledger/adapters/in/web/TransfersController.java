@@ -15,9 +15,12 @@ import com.carloscuatin.ledger.contract.v1.model.Transfer;
 import com.carloscuatin.ledger.contract.v1.model.TransferPage;
 import com.carloscuatin.ledger.contract.v1.model.TransferStatus;
 import com.carloscuatin.ledgerapp.ledger.application.CreateTransfer;
+import com.carloscuatin.ledgerapp.ledger.application.FindTransfer;
+import com.carloscuatin.ledgerapp.ledger.application.TransferView;
 import com.carloscuatin.ledgerapp.ledger.domain.AccountId;
 import com.carloscuatin.ledgerapp.ledger.domain.Money;
 import com.carloscuatin.ledgerapp.ledger.domain.PendingTransfer;
+import com.carloscuatin.ledgerapp.ledger.domain.TransferId;
 import com.carloscuatin.ledgerapp.ledger.domain.TransferTerms;
 
 /**
@@ -32,9 +35,11 @@ class TransfersController implements TransfersApi {
     private static final String VERSION_PREFIX = "/v1";
 
     private final CreateTransfer createTransfer;
+    private final FindTransfer findTransfer;
 
-    TransfersController(CreateTransfer createTransfer) {
+    TransfersController(CreateTransfer createTransfer, FindTransfer findTransfer) {
         this.createTransfer = createTransfer;
+        this.findTransfer = findTransfer;
     }
 
     @Override
@@ -52,12 +57,16 @@ class TransfersController implements TransfersApi {
 
     @Override
     public ResponseEntity<Transfer> getTransfer(UUID id) {
-        throw new UnsupportedOperationException("Reading a transfer is not available");
+        var view = AuthenticatedTenant.call(() -> findTransfer.find(new TransferId(id)));
+
+        return ResponseEntity.ok(toContract(view));
     }
 
     @Override
     public ResponseEntity<TransferPage> listTransfers(@Nullable String cursor, Integer limit) {
-        throw new UnsupportedOperationException("Listing transfers is not available");
+        return AuthenticatedTenant.call(() -> {
+            throw new UnsupportedOperationException("Listing transfers is not available");
+        });
     }
 
     /** The contract fixes the shape of the code, not that it names a currency with minor units. */
@@ -75,9 +84,13 @@ class TransfersController implements TransfersApi {
     }
 
     private static Transfer toContract(PendingTransfer hold) {
-        var terms = hold.terms();
-        return new Transfer(hold.id().value(), terms.source().value(), terms.destination().value(),
+        return toContract(new TransferView(hold.id(), hold.terms(), hold.status()));
+    }
+
+    private static Transfer toContract(TransferView view) {
+        var terms = view.terms();
+        return new Transfer(view.id().value(), terms.source().value(), terms.destination().value(),
                 terms.amount().toDecimalString(), terms.amount().currency().getCurrencyCode(),
-                TransferStatus.fromValue(hold.status().name()));
+                TransferStatus.fromValue(view.status().name()));
     }
 }

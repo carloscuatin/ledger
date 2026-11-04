@@ -47,6 +47,29 @@ class CreateTransferApiIT extends AuthenticatedApi {
     }
 
     @Test
+    void theLocationLeadsToTheSameTransfer() throws Exception {
+        var tenant = UUID.randomUUID();
+        var created = send(postingJson(requestAs(tenant, TRANSFERS), aValidBody()));
+        assertThat(created.statusCode()).isEqualTo(201);
+        var location = created.headers().firstValue("Location").orElseThrow();
+
+        var followed = send(requestAs(tenant, location));
+
+        assertThat(followed.statusCode()).isEqualTo(200);
+        assertThat(followed.headers().firstValue("Content-Type"))
+                .isEqualTo(created.headers().firstValue("Content-Type"));
+        assertThat(followed.body()).isEqualTo(created.body());
+    }
+
+    @Test
+    void theLocationLeadsNowhereForAnotherTenant() throws Exception {
+        var created = send(postingJson(requestAs(UUID.randomUUID(), TRANSFERS), aValidBody()));
+        var location = created.headers().firstValue("Location").orElseThrow();
+
+        assertProblem(send(requestAs(UUID.randomUUID(), location)), ProblemType.NOT_FOUND, location);
+    }
+
+    @Test
     void theClientCannotChooseTheIdentifier() throws Exception {
         var tenant = UUID.randomUUID();
         var chosen = UUID.randomUUID();

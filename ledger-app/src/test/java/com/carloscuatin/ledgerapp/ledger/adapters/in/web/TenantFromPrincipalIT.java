@@ -61,6 +61,30 @@ class TenantFromPrincipalIT extends AuthenticatedApi {
         assertThat(pool.getHikariPoolMXBean().getActiveConnections()).isZero();
     }
 
+    /** The tenant comes first: without one, whether a route has something to serve is nothing this principal may learn. */
+    @Test
+    void aPrincipalWithoutATenantCannotList() throws Exception {
+        var rowsBefore = TransferRows.countInTheTable();
+
+        var response = send(requestAs(TestAuthentication.NO_TENANT, TRANSFERS));
+
+        assertProblem(response, ProblemType.TENANT_REQUIRED, TRANSFERS);
+        assertThat(TransferRows.countInTheTable()).isEqualTo(rowsBefore);
+        assertThat(pool.getHikariPoolMXBean().getActiveConnections()).isZero();
+    }
+
+    @Test
+    void aPrincipalWithoutATenantCannotReadATransferWhetherItExistsOrNot() throws Exception {
+        var existing = TRANSFERS + "/" + TransferRows.seed(UUID.randomUUID());
+        var unknown = TRANSFERS + "/" + UUID.randomUUID();
+        var rowsBefore = TransferRows.countInTheTable();
+
+        assertProblem(send(requestAs(TestAuthentication.NO_TENANT, existing)), ProblemType.TENANT_REQUIRED, existing);
+        assertProblem(send(requestAs(TestAuthentication.NO_TENANT, unknown)), ProblemType.TENANT_REQUIRED, unknown);
+        assertThat(TransferRows.countInTheTable()).isEqualTo(rowsBefore);
+        assertThat(pool.getHikariPoolMXBean().getActiveConnections()).isZero();
+    }
+
     @Test
     @ExtendWith(OutputCaptureExtension.class)
     void aPrincipalWithoutATenantIsNotAnErrorInTheLog(CapturedOutput output) throws Exception {
