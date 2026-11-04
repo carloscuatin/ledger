@@ -65,9 +65,11 @@ paths:
       operationId: listTransfers
       summary: List transfers, newest first
       description: |
-        Walks the transfers of the tenant from the newest to the oldest. Following `nextCursor` visits
-        each transfer that existed when the walk began once, even if new ones arrive during it. A
-        transfer created during a walk may not appear in it, so this is not a way to follow new events.
+        Walks the transfers of the tenant from the newest to the oldest. That order holds to the
+        millisecond: transfers created within the same millisecond have no order among themselves.
+        Following `nextCursor` visits each transfer that existed when the walk began once, even if new
+        ones arrive during it. A transfer created during a walk may not appear in it, so this is not a
+        way to follow new events.
       parameters:
         - name: cursor
           in: query
