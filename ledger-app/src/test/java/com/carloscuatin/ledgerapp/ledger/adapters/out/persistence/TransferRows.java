@@ -36,6 +36,36 @@ public final class TransferRows {
         }
     }
 
+    /** Commits one row for a tenant as the superuser, in the status a test asks for, and returns its id. */
+    public static UUID seedWithStatus(UUID tenant, String status) throws SQLException {
+        return seedAsSuperuser(tenant, 1, "COP", status);
+    }
+
+    /**
+     * Commits one row for a tenant as the superuser, with any values the schema allows. The application never stores some
+     * of them, which is what a test of how they are read is about.
+     */
+    public static UUID seedAsSuperuser(UUID tenant, long amountMinor, String currency, String status)
+            throws SQLException {
+        var id = UUID.randomUUID();
+        try (var connection = LedgerDatabase.asSuperuser();
+                var statement = connection.prepareStatement("""
+                        INSERT INTO transfer
+                            (id, tenant_id, source_account_id, destination_account_id, amount_minor, currency, status)
+                        VALUES (?, ?, ?, ?, ?, ?, ?)
+                        """)) {
+            statement.setObject(1, id);
+            statement.setObject(2, tenant);
+            statement.setObject(3, UUID.randomUUID());
+            statement.setObject(4, UUID.randomUUID());
+            statement.setLong(5, amountMinor);
+            statement.setString(6, currency);
+            statement.setString(7, status);
+            statement.executeUpdate();
+        }
+        return id;
+    }
+
     /** Inserts a valid row without naming its tenant. */
     static void insert(Connection connection, UUID id) throws SQLException {
         try (var statement = connection.prepareStatement("""

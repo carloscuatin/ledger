@@ -10,6 +10,7 @@ import org.springframework.orm.jpa.vendor.HibernateJpaDialect;
 import org.springframework.orm.jpa.vendor.HibernateJpaVendorAdapter;
 
 import com.carloscuatin.ledgerapp.ledger.application.IdGenerator;
+import com.carloscuatin.ledgerapp.ledger.application.TransferQueries;
 import com.carloscuatin.ledgerapp.ledger.application.Transfers;
 
 import jakarta.persistence.EntityManager;
@@ -44,6 +45,11 @@ class PersistenceConfiguration {
     @Bean
     Transfers transfers(EntityManager entityManager) {
         return new JpaTransfers(entityManager);
+    }
+
+    @Bean
+    TransferQueries transferQueries(JdbcClient jdbc) {
+        return new JdbcTransferQueries(jdbc);
     }
 
     @Bean

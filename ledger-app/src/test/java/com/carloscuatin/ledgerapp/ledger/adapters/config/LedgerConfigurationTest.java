@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.util.Currency;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
 import org.junit.jupiter.api.Test;
@@ -16,6 +17,7 @@ import org.springframework.core.env.SystemEnvironmentPropertySource;
 
 import com.carloscuatin.ledgerapp.ledger.application.CreateTransfer;
 import com.carloscuatin.ledgerapp.ledger.application.IdGenerator;
+import com.carloscuatin.ledgerapp.ledger.application.TransferQueries;
 import com.carloscuatin.ledgerapp.ledger.application.Transfers;
 import com.carloscuatin.ledgerapp.ledger.domain.AccountId;
 import com.carloscuatin.ledgerapp.ledger.domain.CurrencyNotEnabledException;
@@ -31,7 +33,8 @@ class LedgerConfigurationTest {
             .withUserConfiguration(LedgerConfiguration.class)
             .withBean(IdGenerator.class, () -> UUID::randomUUID)
             .withBean(Transfers.class, () -> hold -> {
-            });
+            })
+            .withBean(TransferQueries.class, () -> id -> Optional.empty());
 
     @Test
     void theEnabledCurrenciesBindFromTheirProperty() {
