@@ -20,10 +20,11 @@ Design and decisions: [`docs/architecture.md`](docs/architecture.md). Decision r
 | Path | What |
 |---|---|
 | `ledger-app/` | Spring Boot 4 + Spring Modulith application (modular monolith) |
+| `contracts/openapi/` | The API contract, `ledger-v1.yaml`: a folder, not a Maven module |
 | `docs/` | Architecture decisions and diagrams |
 
 The other modules in the plan (`auth-server`, `console-bff`, `console-web`, `libs/dpop`,
-`contracts/`, `infra/terraform/`) are added when their step arrives.
+`infra/terraform/`) are added when their step arrives.
 
 Inside `ledger-app`, each Modulith module (`com.carloscuatin.ledgerapp.<module>`) is hexagonal:
 
@@ -37,6 +38,14 @@ Inside `ledger-app`, each Modulith module (`com.carloscuatin.ledgerapp.<module>`
 
 `LayersTest` (ArchUnit) and `ModularityTest` (Spring Modulith) fail the build when a boundary is
 crossed.
+
+## API contract
+
+`contracts/openapi/ledger-v1.yaml` is the source of the API. Every build generates from it the
+interfaces the controllers implement and the models they exchange, in
+`ledger-app/target/generated-sources/openapi`. They are never committed, so a contract change shows
+in a pull request as a change to that file. `ContractIT` holds the responses of the running API to
+the contract, and compares the routes the application maps with the operations it documents.
 
 ## Commands
 
@@ -64,32 +73,45 @@ Everything runs from the repository root; the root POM is the parent and aggrega
 | Setting | Environment variable | Default | Meaning |
 |---|---|---|---|
 | `ledger.currencies` | `LEDGER_CURRENCIES` | `COP` | Currencies this deployment operates, comma separated |
-| `spring.datasource.url` | `SPRING_DATASOURCE_URL` | none | JDBC URL of the PostgreSQL database |
+| `spring.datasource.url` | `SPRING_DATASOURCE_URL` | none | JDBC URL of the PostgreSQL database, without credentials |
 | `spring.datasource.username` | `SPRING_DATASOURCE_USERNAME` | none | Database role of this process |
 | `spring.datasource.password` | `SPRING_DATASOURCE_PASSWORD` | none | Password of that role |
+| `spring.profiles.active` | `SPRING_PROFILES_ACTIVE` | none | The process this run is: `migrate`, `api`, or none |
+| `server.port` | `SERVER_PORT` | `8080` | Port of the `api` profile, on every network interface |
 
 Settings are validated at startup: a missing value, an unknown code or a currency without a scale
 stops the application and the report names the setting. A command line argument wins over an
 environment variable, and an environment variable wins over the packaged `application.properties`.
 
-Two processes use the database, with the same three settings and a role each, in this order:
+Credentials never go in the JDBC URL, because Hibernate prints the URL in the log at `INFO`,
+parameters included. Use the username and password settings, which it does not print.
 
-1. `SPRING_PROFILES_ACTIVE=migrate`, with the role that owns the schema: applies the Flyway
-   migrations in `ledger-app/src/main/resources/db/migration` and exits. An administrator creates
-   both roles before the first migration.
-2. No profile, with the application role. The migration grants access to `ledger_app` by name, so
-   that is the name of this role: any other role starts, because starting reads no rows, and fails
-   on its first access to a table.
+The profile decides what a process is. All of them take the same three database settings, with a
+role each, and `migrate` runs first:
+
+| Profile | Database role | What it does | Port | How it ends |
+|---|---|---|---|---|
+| `migrate` | The one that owns the schema | Applies the Flyway migrations in `ledger-app/src/main/resources/db/migration` | None | By itself, with status 0 |
+| None | `ledger_app` | Checks its settings, its role and its schema | None | By itself, with status 0 |
+| `api` | `ledger_app` | The same checks, then serves the API | `server.port` | Stays alive until stopped; `SIGTERM` shuts it down, and the JVM reports 143 |
+
+Exiting with status 0 is a successful run of the first two, not a crash: they have no web server, so
+when every check passes nothing keeps the process alive. `api` and `migrate` together do not start:
+the process exits with status 1, naming both profiles, before it connects to the database.
+
+An administrator creates both roles before the first migration. The migration grants access to
+`ledger_app` by name, so that is the name of the application role: any other role starts, because
+starting reads no rows, and fails on its first access to a table.
+
+There is no way to authenticate yet, so every route of `api` answers `401` with an
+`application/problem+json` body and `WWW-Authenticate: DPoP`.
 
 The application does not start without connection settings, against a schema that does not match its
 mapping (a database not yet migrated included), or with a role that can get past row level security:
 a superuser, a role with `BYPASSRLS`, the owner of a table or of a schema that holds a table, or a
 member of any of those. Every schema counts except the system ones. So does owning the database,
 because the `public` schema belongs to `pg_database_owner`, whose member is the database's owner. The
-report names the cause.
-
-The application has no web server, so when every check passes nothing keeps the process alive: it
-starts and exits by itself with status 0. That is a successful run, not a crash.
+report names the cause, the process exits with status 1, and `api` never opens its port.
 
 ### Local Postgres
 
@@ -110,7 +132,14 @@ SPRING_PROFILES_ACTIVE=migrate \
   SPRING_DATASOURCE_USERNAME=ledger_migrator SPRING_DATASOURCE_PASSWORD=test-only-migrator \
   java -jar ledger-app/target/ledger-app-0.0.1-SNAPSHOT.jar
 export SPRING_DATASOURCE_USERNAME=ledger_app SPRING_DATASOURCE_PASSWORD=test-only-app
-java -jar ledger-app/target/ledger-app-0.0.1-SNAPSHOT.jar
+java -jar ledger-app/target/ledger-app-0.0.1-SNAPSHOT.jar   # checks everything and exits with status 0
+SPRING_PROFILES_ACTIVE=api java -jar ledger-app/target/ledger-app-0.0.1-SNAPSHOT.jar   # serves until stopped
+```
+
+From another terminal, while `api` runs:
+
+```sh
+curl -i http://127.0.0.1:8080/v1/transfers   # 401, application/problem+json, WWW-Authenticate: DPoP
 ```
 
 With those variables exported:
@@ -118,6 +147,7 @@ With those variables exported:
 ```sh
 ./mvnw -pl ledger-app spring-boot:run
 ./mvnw -pl ledger-app spring-boot:run -Dspring-boot.run.arguments=--debug  # what Boot auto-configured and why
+SPRING_PROFILES_ACTIVE=api SERVER_PORT=8081 ./mvnw -pl ledger-app spring-boot:run
 LEDGER_CURRENCIES=COP,USD java -jar ledger-app/target/ledger-app-0.0.1-SNAPSHOT.jar
 ```
 
@@ -135,6 +165,11 @@ production code compiles and fails the build on an undeclared `null`. Tests are 
 can pass `null` to prove a boundary rejects it, and `requireNonNull` stays at the boundaries for
 values from unchecked callers. `LayersTest` fails when a package is missing its `@NullMarked`
 `package-info.java`, which would otherwise leave it out of NullAway silently.
+
+The code generated from the contract lies outside that rule: its package,
+`com.carloscuatin.ledger.contract.v1`, is outside the application's base package, so Modulith takes
+it for no module and `LayersTest` does not look at it. NullAway checks nothing about calling it; the
+`@NotNull` and `@Valid` it generates reject a missing value when a request arrives.
 
 Error Prone and NullAway run as annotation processors of the parent's `default-compile` execution.
 A new annotation processor (such as `spring-boot-configuration-processor`) goes in that execution's
