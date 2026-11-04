@@ -1,14 +1,18 @@
 package com.carloscuatin.ledgerapp.ledger.adapters.in.web;
 
+import static com.carloscuatin.ledgerapp.ledger.adapters.in.web.ProblemAssertions.assertNeitherCachedNorSniffed;
+import static com.carloscuatin.ledgerapp.ledger.adapters.in.web.ProblemAssertions.assertProblem;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.IOException;
+import java.net.Socket;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpRequest.BodyPublishers;
 import java.net.http.HttpResponse;
 import java.net.http.HttpResponse.BodyHandlers;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.UUID;
 
@@ -96,10 +100,8 @@ class UnauthenticatedAccessIT {
     void everyRouteAnswersUnauthenticatedProblem(String method, String path) throws Exception {
         var response = send(request(path).method(method, BodyPublishers.noBody()));
 
-        assertThat(response.statusCode()).isEqualTo(401);
-        assertThat(response.headers().firstValue("Content-Type")).hasValue("application/problem+json");
+        assertProblem(response, ProblemType.UNAUTHENTICATED, path);
         assertThat(response.headers().allValues("WWW-Authenticate")).containsExactly("DPoP");
-        assertThat(JSON.readTree(response.body()).path("type").asString()).endsWith("/problems/unauthenticated");
     }
 
     /**
@@ -199,11 +201,59 @@ class UnauthenticatedAccessIT {
 
     @Test
     void aRefusalIsNeitherCachedNorSniffed() throws Exception {
-        var headers = send(request("/v1/transfers")).headers();
+        assertNeitherCachedNorSniffed(send(request("/v1/transfers")).headers());
+    }
 
-        assertThat(headers.firstValue("Cache-Control"))
-                .hasValueSatisfying(value -> assertThat(value).contains("no-store"));
-        assertThat(headers.firstValue("X-Content-Type-Options")).hasValue("nosniff");
+    /** The firewall refuses it ahead of the rules of the chain, so it answers the same with a principal or without. */
+    @Test
+    void aRejectedUrlStillGetsAProblem() throws Exception {
+        var response = send(request("/v1/transfers;x=1"));
+
+        assertProblem(response, ProblemType.BAD_REQUEST, "/");
+    }
+
+    @Test
+    void aMethodTheServerRefusesStillGetsAProblem() throws Exception {
+        var response = send(request("/v1/transfers").method("TRACE", BodyPublishers.noBody()));
+
+        assertProblem(response, ProblemType.METHOD_NOT_ALLOWED, "/v1/transfers");
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {257, 7000})
+    void aVeryLongPathIsNotRepeated(int length) throws Exception {
+        var response = send(request("/" + "a".repeat(length - 1)));
+
+        assertProblem(response, ProblemType.UNAUTHENTICATED, "/");
+    }
+
+    /** The server answers these itself, without reaching the application, so all that can be asked is that it says little. */
+    @ParameterizedTest
+    @ValueSource(strings = {"BAD", "GET /v1%2Ftransfers HTTP/1.1", "GET /v1/tra\u0001nsfers HTTP/1.1",
+        "GET /v1/transfers%00 HTTP/1.1"})
+    void aRequestTheServerCannotParseRevealsNothing(String requestLine) throws Exception {
+        var response = overASocket(requestLine + "\r\nHost: localhost\r\nConnection: close\r\n\r\n");
+
+        assertThat(response).startsWith("HTTP/1.1 400 ");
+        assertThat(response).doesNotContainIgnoringCase("tomcat").doesNotContainIgnoringCase("apache")
+                .doesNotContain("Exception").doesNotContain("\tat ").doesNotContainPattern("[0-9]+\\.[0-9]+\\.[0-9]+");
+    }
+
+    @Test
+    void aPathLongerThanTheServerReadsRevealsNothing() throws Exception {
+        var response = overASocket(
+                "GET /" + "a".repeat(9000) + " HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n");
+
+        assertThat(response).startsWith("HTTP/1.1 400 ");
+        assertThat(response).doesNotContainIgnoringCase("tomcat").doesNotContain("Exception").doesNotContain("aaaa");
+    }
+
+    private String overASocket(String request) throws IOException {
+        try (var socket = new Socket("127.0.0.1", port)) {
+            socket.getOutputStream().write(request.getBytes(StandardCharsets.ISO_8859_1));
+            socket.getOutputStream().flush();
+            return new String(socket.getInputStream().readAllBytes(), StandardCharsets.ISO_8859_1);
+        }
     }
 
     private HttpRequest.Builder createATransfer(String path) {

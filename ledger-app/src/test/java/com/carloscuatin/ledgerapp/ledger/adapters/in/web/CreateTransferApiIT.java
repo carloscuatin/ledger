@@ -1,5 +1,6 @@
 package com.carloscuatin.ledgerapp.ledger.adapters.in.web;
 
+import static com.carloscuatin.ledgerapp.ledger.adapters.in.web.ProblemAssertions.assertProblem;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.net.http.HttpRequest;
@@ -43,6 +44,21 @@ class CreateTransferApiIT extends AuthenticatedApi {
         assertThat(created.path("currency").asString()).isEqualTo("COP");
         assertThat(response.headers().firstValue("Location")).hasValue(TRANSFERS + "/" + id);
         assertThat(TransferRows.amountMinorOf(id)).isEqualTo(15_000_000L);
+    }
+
+    @Test
+    void theClientCannotChooseTheIdentifier() throws Exception {
+        var tenant = UUID.randomUUID();
+        var chosen = UUID.randomUUID();
+
+        var response = send(postingJson(requestAs(tenant, TRANSFERS), BodyPublishers.ofString("""
+                {"id": "%s", "sourceAccountId": "%s", "destinationAccountId": "%s", "amount": "150000.00",
+                 "currency": "COP"}
+                """.formatted(chosen, UUID.randomUUID(), UUID.randomUUID()))));
+
+        assertProblem(response, ProblemType.MALFORMED_REQUEST, TRANSFERS);
+        assertThat(response.body()).doesNotContain(chosen.toString());
+        assertThat(TransferRows.countInTheTableFor(tenant)).isZero();
     }
 
     /** Nothing deduplicates requests, so the same body and the same key still create two holds. */

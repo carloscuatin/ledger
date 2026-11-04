@@ -1,5 +1,7 @@
 package com.carloscuatin.ledgerapp.ledger.adapters.in.web;
 
+import static com.carloscuatin.ledgerapp.ledger.adapters.in.web.ProblemAssertions.assertProblem;
+import static com.carloscuatin.ledgerapp.ledger.adapters.in.web.ProblemAssertions.assertRejectedInputs;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.ByteArrayInputStream;
@@ -8,10 +10,11 @@ import java.net.http.HttpRequest.BodyPublishers;
 import java.net.http.HttpResponse;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.Callable;
 
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -23,6 +26,8 @@ import org.springframework.boot.test.system.CapturedOutput;
 import org.springframework.boot.test.system.OutputCaptureExtension;
 
 import com.carloscuatin.ledgerapp.ledger.adapters.out.persistence.TransferRows;
+
+import tools.jackson.databind.JsonNode;
 
 class AmountsApiIT extends AuthenticatedApi {
 
@@ -36,7 +41,7 @@ class AmountsApiIT extends AuthenticatedApi {
 
         var response = create(tenant, literal, "\"COP\"");
 
-        assertRefusedWithoutARow(response, 400, tenant);
+        assertRefusedWithoutARow(response, ProblemType.MALFORMED_REQUEST, tenant);
     }
 
     @ParameterizedTest(name = "{0}")
@@ -46,7 +51,7 @@ class AmountsApiIT extends AuthenticatedApi {
 
         var response = create(tenant, "\"150000.00\"", literal);
 
-        assertRefusedWithoutARow(response, 400, tenant);
+        assertRefusedWithoutARow(response, ProblemType.MALFORMED_REQUEST, tenant);
     }
 
     @ParameterizedTest(name = "[{0}]")
@@ -56,7 +61,8 @@ class AmountsApiIT extends AuthenticatedApi {
 
         var response = create(tenant, "\"" + amount + "\"", "\"COP\"");
 
-        assertRefusedWithoutARow(response, 400, tenant);
+        var problem = assertRefusedWithoutARow(response, ProblemType.VALIDATION_FAILED, tenant);
+        assertRejectedInputs(problem, List.of(Map.of("pointer", "/amount", "reason", "invalid")));
     }
 
     @ParameterizedTest
@@ -66,7 +72,8 @@ class AmountsApiIT extends AuthenticatedApi {
 
         var response = create(tenant, "\"" + amount + "\"", "\"COP\"");
 
-        assertRefusedWithoutARow(response, tenant);
+        assertRefusedWithoutARow(response, ProblemType.INVALID_AMOUNT, tenant);
+        assertThat(response.body()).doesNotContain(amount);
     }
 
     @Test
@@ -75,7 +82,7 @@ class AmountsApiIT extends AuthenticatedApi {
 
         var response = create(tenant, "\"0.00\"", "\"COP\"");
 
-        assertRefusedWithoutARow(response, tenant);
+        assertRefusedWithoutARow(response, ProblemType.INVALID_AMOUNT, tenant);
     }
 
     @ParameterizedTest
@@ -85,7 +92,8 @@ class AmountsApiIT extends AuthenticatedApi {
 
         var response = create(tenant, "\"150000.00\"", "\"" + currency + "\"");
 
-        assertRefusedWithoutARow(response, tenant);
+        assertRefusedWithoutARow(response, ProblemType.CURRENCY_NOT_ENABLED, tenant);
+        assertThat(response.body()).doesNotContain(currency);
     }
 
     @ParameterizedTest
@@ -95,7 +103,8 @@ class AmountsApiIT extends AuthenticatedApi {
 
         var response = create(tenant, "\"150000.00\"", "\"" + currency + "\"");
 
-        assertRefusedWithoutARow(response, 400, tenant);
+        var problem = assertRefusedWithoutARow(response, ProblemType.VALIDATION_FAILED, tenant);
+        assertRejectedInputs(problem, List.of(Map.of("pointer", "/currency", "reason", "invalid")));
     }
 
     @Test
@@ -107,7 +116,35 @@ class AmountsApiIT extends AuthenticatedApi {
                 {"sourceAccountId": "%s", "destinationAccountId": "%s", "amount": "150000.00", "currency": "COP"}
                 """.formatted(account, account))));
 
-        assertRefusedWithoutARow(response, tenant);
+        assertRefusedWithoutARow(response, ProblemType.SAME_ACCOUNT, tenant);
+        assertThat(response.body()).doesNotContain(account.toString());
+    }
+
+    /**
+     * Each of these is the client's to fix, and each used to reach the server as an uncaught exception, which logs an
+     * error with its trace. An error nobody on this side can act on hides the ones somebody should.
+     */
+    @Test
+    @ExtendWith(OutputCaptureExtension.class)
+    void anExpectedRefusalIsNotAnErrorInTheLog(CapturedOutput output) throws Exception {
+        var account = UUID.randomUUID();
+        var tenant = UUID.randomUUID();
+
+        var responses = List.of(
+                create(tenant, "\"150000.00\"", "\"XAU\""),
+                create(tenant, "\"150000.00\"", "\"ZZZ\""),
+                create(tenant, "\"150000.00\"", "\"USD\""),
+                create(tenant, "\"10.005\"", "\"COP\""),
+                create(tenant, "\"0.00\"", "\"COP\""),
+                send(postingJson(requestAs(tenant, TRANSFERS),
+                        BodyPublishers.ofString(
+                                """
+                                        {"sourceAccountId": "%s", "destinationAccountId": "%s", "amount": "150000.00", "currency": "COP"}
+                                        """
+                                        .formatted(account, account)))));
+
+        assertThat(responses).allSatisfy(response -> assertThat(response.statusCode()).isEqualTo(422));
+        assertThat(output).doesNotContain(" ERROR ").doesNotContain(" WARN ").doesNotContain("Exception");
     }
 
     @Test
@@ -119,7 +156,7 @@ class AmountsApiIT extends AuthenticatedApi {
                  "note": "unexpected"}
                 """.formatted(UUID.randomUUID(), UUID.randomUUID()))));
 
-        assertRefusedWithoutARow(response, 400, tenant);
+        assertRefusedWithoutARow(response, ProblemType.MALFORMED_REQUEST, tenant);
     }
 
     @ParameterizedTest
@@ -132,13 +169,24 @@ class AmountsApiIT extends AuthenticatedApi {
     }
 
     @ParameterizedTest
-    @ValueSource(ints = {33, 10_000, 100_000})
+    @ValueSource(ints = {33, 10_000})
     void anOversizedAmountIsRefusedWithoutRepeatingIt(int length) throws Exception {
         var tenant = UUID.randomUUID();
 
         var response = create(tenant, "\"" + markedAmount(length) + "\"", "\"COP\"");
 
-        assertRefusedWithoutARow(response, 400, tenant);
+        var problem = assertRefusedWithoutARow(response, ProblemType.VALIDATION_FAILED, tenant);
+        assertRejectedInputs(problem, List.of(Map.of("pointer", "/amount", "reason", "invalid")));
+        assertThat(response.body()).doesNotContain(MARK);
+    }
+
+    @Test
+    void anAmountThatMakesTheBodyTooLongIsMalformedWithoutRepeatingIt() throws Exception {
+        var tenant = UUID.randomUUID();
+
+        var response = create(tenant, "\"" + markedAmount(100_000) + "\"", "\"COP\"");
+
+        assertRefusedWithoutARow(response, ProblemType.MALFORMED_REQUEST, tenant);
         assertThat(response.body()).doesNotContain(MARK);
     }
 
@@ -160,7 +208,6 @@ class AmountsApiIT extends AuthenticatedApi {
         assertThat(output).contains(" DEBUG ").doesNotContain(MARK);
     }
 
-    @Disabled("Spring's default resolver writes the rejected value to the log at WARN unless a handler answers first")
     @ParameterizedTest
     @ValueSource(ints = {33, 10_000})
     @ExtendWith(OutputCaptureExtension.class)
@@ -171,12 +218,29 @@ class AmountsApiIT extends AuthenticatedApi {
         assertThat(output).doesNotContain(MARK);
     }
 
-    @Disabled("Spring's exception resolvers write the rejected value to the log at DEBUG")
     @ParameterizedTest
     @ValueSource(ints = {33, 10_000})
     @ExtendWith(OutputCaptureExtension.class)
     void anOversizedAmountStaysOutOfADebugLog(int length, CapturedOutput output) throws Exception {
         var response = atDebugLevel(() -> create(UUID.randomUUID(), "\"" + markedAmount(length) + "\"", "\"COP\""));
+
+        assertThat(response.statusCode()).isEqualTo(400);
+        assertThat(output).contains(" DEBUG ").doesNotContain(MARK);
+    }
+
+    /**
+     * The parser quotes what it could not read in its message, and the framework prints that message before resolving the
+     * exception. The framework's own DEBUG lines print the path and the query as well, so only the body can be asked of it.
+     */
+    @ParameterizedTest
+    @ValueSource(strings = {
+        "{\"SYNTHETICMARK\": 1}",
+        "{\"sourceAccountId\": \"SYNTHETICMARK\"}",
+        "{\"amount\": SYNTHETICMARK}"})
+    @ExtendWith(OutputCaptureExtension.class)
+    void aBodyThatCannotBeReadStaysOutOfADebugLog(String body, CapturedOutput output) throws Exception {
+        var response = atDebugLevel(
+                () -> send(postingJson(requestAs(UUID.randomUUID(), TRANSFERS), BodyPublishers.ofString(body))));
 
         assertThat(response.statusCode()).isEqualTo(400);
         assertThat(output).contains(" DEBUG ").doesNotContain(MARK);
@@ -194,13 +258,14 @@ class AmountsApiIT extends AuthenticatedApi {
     }
 
     @ParameterizedTest(name = "{0} bytes, {1}")
-    @CsvSource({"16385, false", "16385, true", "100000, false", "100000, true", "1000000, false", "1000000, true"})
+    @CsvSource({"16385, false", "16385, true", "17408, false", "17408, true", "100000, false", "100000, true",
+        "1000000, false", "1000000, true"})
     void aBodyOverTheLimitIsRefused(int size, boolean chunked) throws Exception {
         var tenant = UUID.randomUUID();
 
         var response = send(postingJson(requestAs(tenant, TRANSFERS), publisher(paddedBody(size), chunked)));
 
-        assertRefusedWithoutARow(response, 400, tenant);
+        assertRefusedWithoutARow(response, ProblemType.MALFORMED_REQUEST, tenant);
     }
 
     /** However the body is encoded, the limit must hold: another charset can reach the parser by another path. */
@@ -214,7 +279,7 @@ class AmountsApiIT extends AuthenticatedApi {
         var response = send(requestAs(tenant, TRANSFERS)
                 .header("Content-Type", "application/json;charset=" + charsetName).POST(body));
 
-        assertRefusedWithoutARow(response, 400, tenant);
+        assertRefusedWithoutARow(response, ProblemType.MALFORMED_REQUEST, tenant);
     }
 
     private static String markedAmount(int length) {
@@ -252,14 +317,10 @@ class AmountsApiIT extends AuthenticatedApi {
         return send(postingJson(requestAs(tenant, TRANSFERS), BodyPublishers.ofString(body)));
     }
 
-    private static void assertRefusedWithoutARow(HttpResponse<String> response, int status, UUID tenant)
+    private static JsonNode assertRefusedWithoutARow(HttpResponse<String> response, ProblemType type, UUID tenant)
             throws Exception {
-        assertThat(response.statusCode()).isEqualTo(status);
+        var problem = assertProblem(response, type, TRANSFERS);
         assertThat(TransferRows.countInTheTableFor(tenant)).isZero();
-    }
-
-    private static void assertRefusedWithoutARow(HttpResponse<String> response, UUID tenant) throws Exception {
-        assertThat(response.statusCode()).isGreaterThanOrEqualTo(400);
-        assertThat(TransferRows.countInTheTableFor(tenant)).isZero();
+        return problem;
     }
 }

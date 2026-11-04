@@ -1,11 +1,16 @@
 package com.carloscuatin.ledgerapp.ledger.adapters.in.web;
 
+import static com.carloscuatin.ledgerapp.ledger.adapters.in.web.ProblemAssertions.assertProblem;
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.net.http.HttpRequest.BodyPublishers;
 import java.util.UUID;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 
 import com.carloscuatin.ledgerapp.ledger.adapters.out.persistence.TransferRows;
 import com.zaxxer.hikari.HikariDataSource;
@@ -51,9 +56,34 @@ class TenantFromPrincipalIT extends AuthenticatedApi {
 
         var response = send(postingJson(requestAs(TestAuthentication.NO_TENANT, TRANSFERS), aValidBody()));
 
-        assertThat(response.statusCode()).isGreaterThanOrEqualTo(400);
+        assertProblem(response, ProblemType.TENANT_REQUIRED, TRANSFERS);
         assertThat(TransferRows.countInTheTable()).isEqualTo(rowsBefore);
         assertThat(pool.getHikariPoolMXBean().getActiveConnections()).isZero();
+    }
+
+    @Test
+    @ExtendWith(OutputCaptureExtension.class)
+    void aPrincipalWithoutATenantIsNotAnErrorInTheLog(CapturedOutput output) throws Exception {
+        var response = send(postingJson(requestAs(TestAuthentication.NO_TENANT, TRANSFERS), aValidBody()));
+
+        assertThat(response.statusCode()).isEqualTo(403);
+        assertThat(output).doesNotContain(" ERROR ").doesNotContain(" WARN ").doesNotContain("Exception");
+    }
+
+    @Test
+    void aTenantFieldInTheBodyIsRefused() throws Exception {
+        var tenant = UUID.randomUUID();
+        var other = UUID.randomUUID();
+
+        var response = send(postingJson(requestAs(tenant, TRANSFERS), BodyPublishers.ofString("""
+                {"sourceAccountId": "%s", "destinationAccountId": "%s", "amount": "150000.00", "currency": "COP",
+                 "tenantId": "%s"}
+                """.formatted(UUID.randomUUID(), UUID.randomUUID(), other))));
+
+        assertProblem(response, ProblemType.MALFORMED_REQUEST, TRANSFERS);
+        assertThat(response.body()).doesNotContain(other.toString());
+        assertThat(TransferRows.countInTheTableFor(tenant)).isZero();
+        assertThat(TransferRows.countInTheTableFor(other)).isZero();
     }
 
     private static UUID idIn(String body) {

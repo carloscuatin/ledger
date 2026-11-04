@@ -34,6 +34,8 @@ class LayersTest {
 
     private static final String GENERATED_INTERFACES = "com.carloscuatin.ledger.contract..api..";
 
+    private static final String ERROR_PAGE_CONTROLLER = "com.carloscuatin.ledgerapp.ledger.adapters.in.web.ContainerErrorController";
+
     /** Spring MVC maps both: {@code @GetMapping} and its siblings carry the first, {@code @GetExchange} the second. */
     private static final List<Class<? extends Annotation>> ROUTE_ANNOTATIONS = List.of(RequestMapping.class,
             HttpExchange.class);
@@ -97,10 +99,15 @@ class LayersTest {
 
     /**
      * A route written by hand is one the contract does not document. Controllers inherit their mappings from the
-     * generated interfaces, so no mapping annotation appears in their own bytecode.
+     * generated interfaces, so no mapping annotation appears in their own bytecode. The one exception is the server's
+     * error page, which clients do not call and no contract describes; the server forwards to it, and it needs a route
+     * for that. It is named exactly, so another class cannot pass as one.
      */
     @ArchTest
-    static final ArchRule handWrittenCodeDeclaresNoRoutes = classes().should(declareNoRoutes());
+    static final ArchRule handWrittenCodeDeclaresNoRoutes = classes()
+            .that()
+            .doNotHaveFullyQualifiedName(ERROR_PAGE_CONTROLLER)
+            .should(declareNoRoutes());
 
     /**
      * The first transaction of a request belongs to a use case, which has the tenant in scope and knows whether it writes.

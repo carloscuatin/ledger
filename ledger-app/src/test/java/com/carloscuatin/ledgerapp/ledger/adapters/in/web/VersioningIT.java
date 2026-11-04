@@ -1,5 +1,6 @@
 package com.carloscuatin.ledgerapp.ledger.adapters.in.web;
 
+import static com.carloscuatin.ledgerapp.ledger.adapters.in.web.ProblemAssertions.assertProblem;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.UUID;
@@ -36,8 +37,8 @@ class VersioningIT extends AuthenticatedApi {
         var created = send(postingJson(requestAs(tenant, path), aValidBody()));
         var listed = send(requestAs(tenant, path));
 
-        assertThat(created.statusCode()).isEqualTo(404);
-        assertThat(listed.statusCode()).isEqualTo(404);
+        assertProblem(created, ProblemType.NOT_FOUND, path);
+        assertProblem(listed, ProblemType.NOT_FOUND, path);
         assertThat(TransferRows.countInTheTableFor(tenant)).isZero();
     }
 
@@ -49,8 +50,8 @@ class VersioningIT extends AuthenticatedApi {
         var created = send(postingJson(requestAs(tenant, path), aValidBody()));
         var listed = send(requestAs(tenant, path));
 
-        assertThat(created.statusCode()).isEqualTo(400);
-        assertThat(listed.statusCode()).isEqualTo(400);
+        assertProblem(created, ProblemType.UNSUPPORTED_VERSION, path);
+        assertProblem(listed, ProblemType.UNSUPPORTED_VERSION, path);
         assertThat(TransferRows.countInTheTableFor(tenant)).isZero();
     }
 
@@ -58,8 +59,7 @@ class VersioningIT extends AuthenticatedApi {
     void theErrorPageIsNotReadAsAVersion() throws Exception {
         var response = send(requestAs(UUID.randomUUID(), "/error"));
 
-        assertThat(response.body()).doesNotContain("Invalid API version");
-        assertThat(response.statusCode()).isNotEqualTo(400);
+        assertProblem(response, ProblemType.NOT_FOUND, "/error");
     }
 
     /** A failure is forwarded to the error page, and that forward must not turn into a complaint about the version. */
