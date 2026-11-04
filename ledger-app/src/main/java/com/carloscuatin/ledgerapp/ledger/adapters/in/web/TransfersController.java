@@ -1,6 +1,7 @@
 package com.carloscuatin.ledgerapp.ledger.adapters.in.web;
 
 import java.util.Currency;
+import java.util.Optional;
 import java.util.UUID;
 
 import org.jspecify.annotations.Nullable;
@@ -16,6 +17,7 @@ import com.carloscuatin.ledger.contract.v1.model.TransferPage;
 import com.carloscuatin.ledger.contract.v1.model.TransferStatus;
 import com.carloscuatin.ledgerapp.ledger.application.CreateTransfer;
 import com.carloscuatin.ledgerapp.ledger.application.FindTransfer;
+import com.carloscuatin.ledgerapp.ledger.application.ListTransfers;
 import com.carloscuatin.ledgerapp.ledger.application.TransferView;
 import com.carloscuatin.ledgerapp.ledger.domain.AccountId;
 import com.carloscuatin.ledgerapp.ledger.domain.Money;
@@ -36,10 +38,12 @@ class TransfersController implements TransfersApi {
 
     private final CreateTransfer createTransfer;
     private final FindTransfer findTransfer;
+    private final ListTransfers listTransfers;
 
-    TransfersController(CreateTransfer createTransfer, FindTransfer findTransfer) {
+    TransfersController(CreateTransfer createTransfer, FindTransfer findTransfer, ListTransfers listTransfers) {
         this.createTransfer = createTransfer;
         this.findTransfer = findTransfer;
+        this.listTransfers = listTransfers;
     }
 
     @Override
@@ -64,9 +68,12 @@ class TransfersController implements TransfersApi {
 
     @Override
     public ResponseEntity<TransferPage> listTransfers(@Nullable String cursor, Integer limit) {
-        return AuthenticatedTenant.call(() -> {
-            throw new UnsupportedOperationException("Listing transfers is not available");
-        });
+        // Decoded inside the scope, so that a principal without a tenant is told that first, whatever its cursor says.
+        var page = AuthenticatedTenant
+                .call(() -> listTransfers.list(Optional.ofNullable(cursor).map(Cursor::decode), limit));
+
+        var items = page.items().stream().map(TransfersController::toContract).toList();
+        return ResponseEntity.ok(new TransferPage(items, page.next().map(Cursor::encode).orElse(null)));
     }
 
     /** The contract fixes the shape of the code, not that it names a currency with minor units. */

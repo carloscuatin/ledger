@@ -66,6 +66,11 @@ class ProblemHandler extends ResponseEntityExceptionHandler {
         return answer(ProblemType.NOT_FOUND, request);
     }
 
+    @ExceptionHandler(InvalidCursorException.class)
+    ResponseEntity<Object> invalidCursor(WebRequest request) {
+        return answer(ProblemType.INVALID_CURSOR, request);
+    }
+
     @ExceptionHandler(TenantRequiredException.class)
     ResponseEntity<Object> tenantRequired(WebRequest request) {
         return answer(ProblemType.TENANT_REQUIRED, request);

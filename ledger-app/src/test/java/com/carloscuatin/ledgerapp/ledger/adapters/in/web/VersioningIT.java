@@ -28,6 +28,13 @@ class VersioningIT extends AuthenticatedApi {
         assertThat(TransferRows.countInTheTableFor(tenant)).isEqualTo(1);
     }
 
+    @Test
+    void theSupportedVersionListsTransfers() throws Exception {
+        var response = send(requestAs(UUID.randomUUID(), "/v1/transfers"));
+
+        assertThat(response.statusCode()).isEqualTo(200);
+    }
+
     @ParameterizedTest
     @ValueSource(strings = {"/transfers", "/1/transfers", "/v1.0/transfers", "/v01/transfers", "/V1/transfers",
         "/vx/transfers", "/v0/transfers"})
