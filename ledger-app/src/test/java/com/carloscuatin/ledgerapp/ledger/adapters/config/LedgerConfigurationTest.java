@@ -2,10 +2,10 @@ package com.carloscuatin.ledgerapp.ledger.adapters.config;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.mock;
 
 import java.util.Currency;
 import java.util.Map;
-import java.util.Optional;
 import java.util.UUID;
 
 import org.junit.jupiter.api.Test;
@@ -34,7 +34,7 @@ class LedgerConfigurationTest {
             .withBean(IdGenerator.class, () -> UUID::randomUUID)
             .withBean(Transfers.class, () -> hold -> {
             })
-            .withBean(TransferQueries.class, () -> id -> Optional.empty());
+            .withBean(TransferQueries.class, () -> mock(TransferQueries.class));
 
     @Test
     void theEnabledCurrenciesBindFromTheirProperty() {

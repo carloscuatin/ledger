@@ -48,6 +48,13 @@ public final class TransferRows {
     public static UUID seedAsSuperuser(UUID tenant, long amountMinor, String currency, String status)
             throws SQLException {
         var id = UUID.randomUUID();
+        seedAsSuperuserAt(id, tenant, amountMinor, currency, status);
+        return id;
+    }
+
+    /** The same at a position a test chooses, which a test of what a page runs into needs. */
+    public static void seedAsSuperuserAt(UUID id, UUID tenant, long amountMinor, String currency, String status)
+            throws SQLException {
         try (var connection = LedgerDatabase.asSuperuser();
                 var statement = connection.prepareStatement("""
                         INSERT INTO transfer
@@ -63,7 +70,13 @@ public final class TransferRows {
             statement.setString(7, status);
             statement.executeUpdate();
         }
-        return id;
+    }
+
+    /** Commits one row at a position a test chooses, as the superuser, which a test of an order or of a walk needs. */
+    public static void seedAt(UUID tenant, UUID id) throws SQLException {
+        try (var connection = LedgerDatabase.asSuperuser()) {
+            insertFor(connection, id, tenant);
+        }
     }
 
     /** Inserts a valid row without naming its tenant. */
@@ -131,6 +144,18 @@ public final class TransferRows {
             try (var rows = statement.executeQuery()) {
                 rows.next();
                 return rows.getLong(1);
+            }
+        }
+    }
+
+    /** The rows a tenant really holds in the order of the database, seen past row level security. */
+    public static List<UUID> idsNewestFirst(UUID tenant) throws SQLException {
+        try (var connection = LedgerDatabase.asSuperuser();
+                var statement = connection
+                        .prepareStatement("SELECT id FROM transfer WHERE tenant_id = ? ORDER BY id DESC")) {
+            statement.setObject(1, tenant);
+            try (var rows = statement.executeQuery()) {
+                return ids(rows);
             }
         }
     }

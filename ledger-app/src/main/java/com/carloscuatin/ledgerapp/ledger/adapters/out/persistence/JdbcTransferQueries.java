@@ -3,6 +3,7 @@ package com.carloscuatin.ledgerapp.ledger.adapters.out.persistence;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.Currency;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -31,6 +32,23 @@ class JdbcTransferQueries implements TransferQueries {
             WHERE id = ?
             """;
 
+    /** Visible to the test of its plan, which must look at the statement that runs and not at a copy of it. */
+    static final String NEWEST_PAGE = """
+            SELECT id, source_account_id, destination_account_id, amount_minor, currency, status
+            FROM transfer
+            ORDER BY id DESC
+            LIMIT ?
+            """;
+
+    /** Visible to the test of its plan, which must look at the statement that runs and not at a copy of it. */
+    static final String PAGE_BEFORE = """
+            SELECT id, source_account_id, destination_account_id, amount_minor, currency, status
+            FROM transfer
+            WHERE id < ?
+            ORDER BY id DESC
+            LIMIT ?
+            """;
+
     private final JdbcClient jdbc;
 
     JdbcTransferQueries(JdbcClient jdbc) {
@@ -42,6 +60,18 @@ class JdbcTransferQueries implements TransferQueries {
     @Transactional(propagation = Propagation.MANDATORY)
     public Optional<TransferView> find(TransferId id) {
         return jdbc.sql(FIND).param(id.value()).query(JdbcTransferQueries::view).optional();
+    }
+
+    /**
+     * The position is a value to compare and nothing else: no row has to exist at it, and whose it was makes no
+     * difference, because row level security decides what the comparison runs over.
+     */
+    @Override
+    @Transactional(propagation = Propagation.MANDATORY)
+    public List<TransferView> newestFirst(Optional<TransferId> before, int rows) {
+        var statement = before.map(position -> jdbc.sql(PAGE_BEFORE).param(position.value()))
+                .orElseGet(() -> jdbc.sql(NEWEST_PAGE));
+        return statement.param(rows).query(JdbcTransferQueries::view).list();
     }
 
     /**

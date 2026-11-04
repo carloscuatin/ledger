@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.util.Currency;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
@@ -36,6 +37,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 import com.carloscuatin.ledgerapp.ledger.application.CreateTransfer;
 import com.carloscuatin.ledgerapp.ledger.application.CurrentTenant;
 import com.carloscuatin.ledgerapp.ledger.application.FindTransfer;
+import com.carloscuatin.ledgerapp.ledger.application.ListTransfers;
 import com.carloscuatin.ledgerapp.ledger.application.TransferQueries;
 import com.carloscuatin.ledgerapp.ledger.application.TransferView;
 import com.carloscuatin.ledgerapp.ledger.domain.AccountId;
@@ -94,6 +96,9 @@ class TransferQueriesIT {
 
     @Autowired
     private FindTransfer findTransfer;
+
+    @Autowired
+    private ListTransfers listTransfers;
 
     @Autowired
     private CreateTransfer createTransfer;
@@ -218,6 +223,90 @@ class TransferQueriesIT {
         }
 
         assertThat(seen).hasValue("on");
+    }
+
+    /** The list decides this with an annotation of its own, so the test of {@link FindTransfer} says nothing about it. */
+    @Test
+    void theListReadsInATransactionTheDatabaseTreatsAsReadOnly() {
+        var seen = new AtomicReference<@Nullable String>();
+        MethodInterceptor askTheDatabase = invocation -> {
+            seen.set(jdbc.sql("SHOW transaction_read_only").query(String.class).single());
+            return invocation.proceed();
+        };
+        var port = (Advised) queries;
+        port.addAdvice(0, askTheDatabase);
+        try {
+            CurrentTenant.callAs(tenantA, () -> listTransfers.list(Optional.empty(), 1));
+        } finally {
+            port.removeAdvice(askTheDatabase);
+        }
+
+        assertThat(seen).hasValue("on");
+    }
+
+    @Test
+    void theListRefusesToRunWithoutATenantWithoutAskingThePool() {
+        var requests = CountedConnections.REQUESTS.get();
+
+        assertThatThrownBy(() -> listTransfers.list(Optional.empty(), 1))
+                .isExactlyInstanceOf(CannotCreateTransactionException.class)
+                .hasRootCauseMessage("No tenant in scope");
+
+        assertThat(CountedConnections.REQUESTS.get()).isEqualTo(requests);
+    }
+
+    @Test
+    void theAdapterRefusesToListWithoutATransaction() {
+        assertThatThrownBy(() -> CurrentTenant.callAs(tenantA, () -> queries.newestFirst(Optional.empty(), 1)))
+                .isExactlyInstanceOf(IllegalTransactionStateException.class)
+                .hasMessageContaining("mandatory");
+    }
+
+    @Test
+    void aPageTakesOneConnectionOnce() {
+        createAs(tenantA);
+        createAs(tenantA);
+        var requests = CountedConnections.REQUESTS.get();
+
+        CurrentTenant.callAs(tenantA, () -> listTransfers.list(Optional.empty(), 1));
+
+        assertThat(CountedConnections.REQUESTS.get()).isEqualTo(requests + 1);
+    }
+
+    /**
+     * Two identifiers either side of the highest bit, where the signed comparison of the JDK and the order of the bytes
+     * disagree. The control pins that they do disagree, so that the order seen can only have come from the database.
+     */
+    @Test
+    void identifiersAreOrderedByTheDatabaseAndNotAsJavaComparesThem() throws SQLException {
+        var random = UUID.randomUUID().getLeastSignificantBits();
+        var belowTheBit = new UUID(0x7FFF_FFFF_FFFF_7000L, random);
+        var aboveTheBit = new UUID(0x8000_0000_0000_7000L, random);
+        TransferRows.seedAt(tenantA.value(), belowTheBit);
+        TransferRows.seedAt(tenantA.value(), aboveTheBit);
+
+        assertThat(aboveTheBit.compareTo(belowTheBit)).isNegative();
+        var newest = CurrentTenant.callAs(tenantA, () -> listTransfers.list(Optional.empty(), 1));
+        var older = CurrentTenant.callAs(tenantA, () -> listTransfers.list(newest.next(), 1));
+        var pastTheEnd = CurrentTenant.callAs(tenantA,
+                () -> listTransfers.list(Optional.of(new TransferId(belowTheBit)), 1));
+
+        assertThat(newest.items()).extracting(view -> view.id().value()).containsExactly(aboveTheBit);
+        assertThat(newest.next()).contains(new TransferId(aboveTheBit));
+        assertThat(older.items()).extracting(view -> view.id().value()).containsExactly(belowTheBit);
+        assertThat(older.next()).isEmpty();
+        assertThat(pastTheEnd.items()).isEmpty();
+    }
+
+    @Test
+    void aPageHoldsOnlyTheRowsOfItsTenant() {
+        var ofA = createAs(tenantA);
+        var ofB = createAs(tenantB);
+
+        var page = CurrentTenant.callAs(tenantA, () -> listTransfers.list(Optional.empty(), 10));
+
+        assertThat(page.items()).containsExactly(new TransferView(ofA.id(), ofA.terms(), ofA.status()));
+        assertThat(page.items()).extracting(TransferView::id).doesNotContain(ofB.id());
     }
 
     /**

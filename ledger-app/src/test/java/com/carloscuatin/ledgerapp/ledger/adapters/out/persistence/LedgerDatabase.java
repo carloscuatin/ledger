@@ -180,6 +180,10 @@ public final class LedgerDatabase {
         return DriverManager.getConnection(SERVER.getJdbcUrl(), "ledger_app", "test-only-app");
     }
 
+    static Connection asApplication(String url) throws SQLException {
+        return DriverManager.getConnection(url, "ledger_app", "test-only-app");
+    }
+
     /** The role that owns the tables and runs the migrations. */
     static Connection asMigrator() throws SQLException {
         return DriverManager.getConnection(SERVER.getJdbcUrl(), "ledger_migrator", "test-only-migrator");
