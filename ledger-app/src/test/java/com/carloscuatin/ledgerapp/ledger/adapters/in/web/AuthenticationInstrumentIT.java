@@ -17,7 +17,7 @@ import jakarta.servlet.Filter;
  * Tests the instrument the authenticated tests rely on, and doubles as the control for what
  * {@link UnauthenticatedAccessIT} says about production: the probes used there do see a customizer when there is one.
  */
-class TestAuthenticationIT extends AuthenticatedApi {
+class AuthenticationInstrumentIT extends AuthenticatedApi {
 
     @Autowired
     private ApplicationContext context;

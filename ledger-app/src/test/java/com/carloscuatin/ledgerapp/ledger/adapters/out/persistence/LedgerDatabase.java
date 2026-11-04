@@ -64,6 +64,19 @@ public final class LedgerDatabase {
                 arguments(SERVER.getJdbcUrl(), username, password, "--server.port=" + port));
     }
 
+    /**
+     * The server as the application's role, with what a test adds to it, for a test that needs the whole start of the
+     * process in front of it or must be free to break the process. Spring caches a context it starts for a test class and
+     * shares it, which is why those tests do not use one.
+     */
+    public static ConfigurableApplicationContext startApi(List<Class<?>> extraSources, String... extraArguments) {
+        var arguments = new ArrayList<>(List.of(extraArguments));
+        arguments.add("--server.port=0");
+        return new SpringApplicationBuilder(LedgerApplication.class).sources(extraSources.toArray(Class<?>[]::new))
+                .profiles("api")
+                .run(arguments(SERVER.getJdbcUrl(), "ledger_app", "test-only-app", arguments.toArray(String[]::new)));
+    }
+
     /** The command line of a process that connects to a database as the migrator. */
     public static String[] argumentsAsTheMigrator(String url, String... extraArguments) {
         return arguments(url, "ledger_migrator", "test-only-migrator", extraArguments);

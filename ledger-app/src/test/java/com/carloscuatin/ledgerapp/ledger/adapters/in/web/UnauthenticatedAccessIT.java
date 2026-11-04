@@ -36,6 +36,7 @@ import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
 import com.carloscuatin.ledgerapp.ledger.adapters.out.persistence.LedgerDatabase;
 import com.carloscuatin.ledgerapp.ledger.adapters.out.persistence.TransferRows;
@@ -185,6 +186,24 @@ class UnauthenticatedAccessIT {
         assertThat(context.getBeanNamesForType(Customizer.class)).isEmpty();
         try (var api = LedgerDatabase.startApi("ledger_app", "test-only-app", 0)) {
             assertThat(api.getBeanNamesForType(Customizer.class)).isEmpty();
+        }
+    }
+
+    /**
+     * The other way to put something in front of a controller, and how Spring adds an open session: every configurer of
+     * Spring MVC by name, in the process started here too, so a new one has to be looked at.
+     */
+    @Test
+    void onlyTheExpectedConfigurersShapeSpringMvcInProduction() {
+        var expected = new String[] {
+            "webConfiguration",
+            "org.springframework.boot.webmvc.autoconfigure.WebMvcAutoConfiguration$WebMvcAutoConfigurationAdapter",
+            "org.springframework.data.web.config.SpringDataWebConfiguration",
+            "org.springframework.security.config.annotation.web.configuration.WebMvcSecurityConfiguration"};
+
+        assertThat(context.getBeanNamesForType(WebMvcConfigurer.class)).containsExactlyInAnyOrder(expected);
+        try (var api = LedgerDatabase.startApi("ledger_app", "test-only-app", 0)) {
+            assertThat(api.getBeanNamesForType(WebMvcConfigurer.class)).containsExactlyInAnyOrder(expected);
         }
     }
 
