@@ -35,13 +35,17 @@ identifier, and list them by an opaque cursor, on an index of each tenant. Failu
 catalog of problem types. The `api` profile is the only process that opens a port, and it runs
 requests on virtual threads. `migrate` and a process without a profile open none: they do their work
 and exit with status 0, and without a profile that work is checking the settings, the role and the
-schema.
+schema. A process made a server without `api` refuses to start, because the chain exists only in
+that profile.
 
-Every route answers `401`. The security filter chain demands an authenticated principal, and nothing
-in the application can produce one, so no request authenticates and a running process stores
-nothing. The only inbound adapter that opens the tenant scope takes the tenant from that principal,
-and the principal used by the tests exists only in their own sources: the packaged jar does not hold
-it.
+The security filter chain demands an authenticated principal, and nothing in the application can
+produce one, so no request authenticates, a running process stores nothing, and what reaches the
+chain answers `401` on any route, without reading a body. What the web server refuses or answers
+itself never reaches it: what is not valid HTTP gets the server's own short HTML, `OPTIONS *` its
+empty `200`, and its protected folders, like the URLs the firewall of the chain refuses, a problem
+from the catalog (the README has the list). The only inbound adapter that opens the tenant scope
+takes the tenant from that principal, and the principal used by the tests exists only in their own
+sources: the packaged jar does not hold it.
 
 Two limits follow from what does not exist yet. Repeating a `POST` creates another hold, because no
 `Idempotency-Key` is read, and the accounts of a transfer are not checked against anything, because

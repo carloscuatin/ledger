@@ -8,8 +8,16 @@ info:
     Every request needs an authenticated principal, and the tenant of a request is the tenant of its
     principal. No header, parameter, body field or cursor can choose another one.
 
-    A rejection is always a `Problem`, whose `type` is the stable value to program against: `title`
-    and `detail` are constant for each type and never repeat what the client sent.
+    A rejection by the application is a `Problem`, whose `type` is the stable value to program against:
+    `title` and `detail` are constant for each type and never repeat what the client sent. What the web
+    server cannot take as a request never reaches the application: an escaped slash or a null in a path,
+    headers that are too large, `CONNECT`, an unknown `Expect` or another HTTP version get the server's
+    own short HTML, with no name or version in it.
+
+    An identifier comes back in one spelling, lowercase with dashes, which is the one to compare. In a
+    request the server also reads other spellings of the same identifier, which this document does not
+    promise: uppercase, and in a body surrounding spaces, or in a path shortened groups. An identifier
+    only needs to be well formed: the accounts of a transfer are not checked against anything.
 servers:
   - url: /v1
 tags:
@@ -81,7 +89,10 @@ paths:
         - name: limit
           in: query
           required: false
-          description: Largest number of transfers in the page.
+          description: |
+            Largest number of transfers in the page. Only a plain decimal is promised: other spellings
+            of an integer the server happens to read, like leading zeros, may stop working. If it is
+            repeated, the first one counts.
           schema:
             type: integer
             format: int32
@@ -307,11 +318,11 @@ components:
         |---|---|---|
         | `unauthenticated` | 401 | The request has no authenticated principal |
         | `tenant-required` | 403 | The authenticated principal has no tenant |
-        | `malformed-request` | 400 | Invalid JSON, an unknown field, a wrong JSON type, an empty body or one over 16 KiB, a parameter that cannot be converted |
+        | `malformed-request` | 400 | Invalid JSON, an unknown or repeated field, a wrong JSON type, an empty body or one over 16 KiB, a parameter that cannot be converted |
         | `validation-failed` | 400 | A required field missing or null, a broken pattern, length or limit. `errors` lists them |
         | `invalid-cursor` | 400 | A cursor that does not decode to a position |
         | `unsupported-version` | 400 | A well formed version of the API that is not served |
-        | `bad-request` | 400 | Any other request the server refuses as invalid |
+        | `bad-request` | 400 | Any other request the server refuses as invalid, like a path parameter or a query that cannot be decoded |
         | `not-found` | 404 | A route that does not exist, or a transfer the tenant does not have |
         | `method-not-allowed` | 405 | A method the route does not support. The `Allow` header lists the ones it does |
         | `not-acceptable` | 406 | No representation the `Accept` header allows |

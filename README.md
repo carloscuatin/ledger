@@ -98,13 +98,25 @@ role each, and `migrate` runs first:
 Exiting with status 0 is a successful run of the first two, not a crash: they have no web server, so
 when every check passes nothing keeps the process alive. `api` and `migrate` together do not start:
 the process exits with status 1, naming both profiles, before it connects to the database.
+A process made a server by hand, with `spring.main.web-application-type=servlet` and without `api`,
+does not start either, with or without `migrate`: it exits with status 1, saying it would open a port
+without the security filter chain, before it connects to the database.
 
 An administrator creates both roles before the first migration. The migration grants access to
 `ledger_app` by name, so that is the name of the application role: any other role starts, because
 starting reads no rows, and fails on its first access to a table.
 
-There is no way to authenticate yet, so every route of `api` answers `401` with an
-`application/problem+json` body and `WWW-Authenticate: DPoP`.
+There is no way to authenticate yet, so whatever reaches the security filter chain of `api` answers
+`401` with an `application/problem+json` body and `WWW-Authenticate: DPoP`, on any route and whatever
+the credential. A body is not read to refuse a request. What does not get that far:
+
+| Request | Answer |
+|---|---|
+| A path parameter (`;`), or a URL the firewall of the chain refuses | `400`, a `bad-request` problem |
+| `TRACE` | `405`, a `method-not-allowed` problem |
+| `/WEB-INF/*` and `/META-INF/*`, which the server keeps from every client | `404`, a `not-found` problem |
+| `OPTIONS *`, which names no route | `200` from the server, with `Allow` and no body |
+| What the server cannot take as a request: `%2F` or `%00` in a path, headers over 8 KiB, `CONNECT`, an unknown `Expect`, another HTTP version | `400`, `501`, `417` or `505` from the server, in its short HTML, without its name or version |
 
 The application does not start without connection settings, against a schema that does not match its
 mapping (a database not yet migrated included), or with a role that can get past row level security:
