@@ -15,6 +15,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.config.BeanPostProcessor;
@@ -42,6 +43,9 @@ import com.carloscuatin.ledgerapp.ledger.adapters.out.persistence.LedgerDatabase
 class ApiProfileIT {
 
     private static final String LOCALHOST = "127.0.0.1";
+
+    private static final String SERVER_REFUSAL = "This process would open a port without the api profile, the only one"
+            + " that declares the security filter chain: Spring Boot's default chain would serve the port instead.";
 
     private static final String REFUSAL = "The api and migrate profiles must not run in the same process: api serves"
             + " requests with the application's role, and migrate changes the schema with its own.";
@@ -136,6 +140,96 @@ class ApiProfileIT {
     }
 
     /**
+     * Setting the web application type by hand makes a server of a process with no security chain of its own: Spring Boot
+     * would then serve its own login form, and the migrate profile would never exit. Nothing may have happened by the time
+     * the process refuses. The body closes what starts, so a process that wrongly starts does not outlive its test.
+     */
+    @ParameterizedTest(name = "profile [{0}], lazy {1}")
+    @CsvSource({"'', false", "'', true", "migrate, false", "migrate, true"})
+    void aServerWithoutTheApiProfileIsRefusedWithNothingDone(String profile, boolean lazy) throws Exception {
+        var url = LedgerDatabase.createEmptyDatabaseForTheMigrator();
+        var freePort = aFreePort();
+
+        var opened = openedWhile(freePort, () -> assertThatThrownBy(() -> {
+            try (var started = withProfile(profile, LedgerApplication.class)
+                    .run(LedgerDatabase.argumentsAsTheMigrator(url,
+                            "--server.port=" + freePort, "--spring.main.web-application-type=servlet",
+                            "--spring.main.lazy-initialization=" + lazy))) {
+                assertThat(started).isNotNull();
+            }
+        }).isInstanceOf(IllegalStateException.class).hasMessage(SERVER_REFUSAL));
+
+        assertThat(opened).isFalse();
+        assertThat(LedgerDatabase.tableExists(url, "flyway_schema_history")).isFalse();
+        assertThat(LedgerDatabase.tableExists(url, "transfer")).isFalse();
+    }
+
+    /** The database a deployment has: without the refusal, nothing else stops this process from serving. */
+    @ParameterizedTest(name = "lazy {0}")
+    @ValueSource(booleans = {false, true})
+    void aServerWithoutTheApiProfileIsRefusedOnAMigratedDatabase(boolean lazy) throws Exception {
+        var freePort = aFreePort();
+
+        var opened = openedWhile(freePort, () -> assertThatThrownBy(() -> {
+            try (var started = new SpringApplicationBuilder(LedgerApplication.class).run(
+                    "--spring.datasource.url=" + LedgerDatabase.url(), "--spring.datasource.username=ledger_app",
+                    "--spring.datasource.password=test-only-app", "--server.port=" + freePort,
+                    "--spring.main.web-application-type=servlet", "--spring.main.lazy-initialization=" + lazy)) {
+                assertThat(started).isNotNull();
+            }
+        }).isInstanceOf(IllegalStateException.class).hasMessage(SERVER_REFUSAL));
+
+        assertThat(opened).isFalse();
+    }
+
+    /** The same order as for the two profiles together, for the same reason. */
+    @ParameterizedTest(name = "lazy {0}")
+    @ValueSource(booleans = {false, true})
+    void theRefusalOfAServerComesBeforeEveryBeanWhateverTheirOrder(boolean lazy) throws Exception {
+        var url = LedgerDatabase.createEmptyDatabaseForTheMigrator();
+        var initialized = new ArrayList<String>();
+        ApplicationContextInitializer<ConfigurableApplicationContext> recorder = context -> context.getBeanFactory()
+                .addBeanPostProcessor(new BeanPostProcessor() {
+                    @Override
+                    public Object postProcessBeforeInitialization(Object bean, String name) {
+                        initialized.add(name);
+                        return bean;
+                    }
+                });
+
+        assertThatThrownBy(() -> {
+            try (var started = withProfile("migrate", DemandsTheMigration.class, LedgerApplication.class)
+                    .initializers(recorder).run(LedgerDatabase.argumentsAsTheMigrator(url, "--server.port=0",
+                            "--spring.main.web-application-type=servlet",
+                            "--spring.main.lazy-initialization=" + lazy))) {
+                assertThat(started).isNotNull();
+            }
+        }).isInstanceOf(IllegalStateException.class).hasMessage(SERVER_REFUSAL);
+
+        assertThat(initialized).contains("serverWithoutTheApiProfileRefusal").doesNotContain("demandsTheMigration",
+                "flyway", "flywayInitializer", "dataSource", "databaseRoleGuard", "createTransfer",
+                "tomcatServletWebServerFactory");
+        assertThat(LedgerDatabase.tableExists(url, "flyway_schema_history")).isFalse();
+    }
+
+    /** What the refusal must leave alone, with the setting spelled out as well as left to its default. */
+    @ParameterizedTest(name = "lazy {0}")
+    @ValueSource(booleans = {false, true})
+    void aProcessThatIsNotAServerIsNotRefused(boolean lazy) throws Exception {
+        var url = LedgerDatabase.createEmptyDatabaseForTheMigrator();
+
+        try (var migrate = withProfile("migrate", LedgerApplication.class)
+                .run(LedgerDatabase.argumentsAsTheMigrator(url,
+                        "--spring.main.web-application-type=none", "--spring.main.lazy-initialization=" + lazy))) {
+            assertThat(migrate).isNotInstanceOf(WebServerApplicationContext.class);
+        }
+        assertThat(LedgerDatabase.tableExists(url, "transfer")).isTrue();
+        try (var api = LedgerDatabase.startApi(List.of(), "--spring.main.lazy-initialization=" + lazy)) {
+            assertThat(api).isInstanceOf(WebServerApplicationContext.class);
+        }
+    }
+
+    /**
      * The probe knocks during the whole startup, because a port opened and closed again would look the same as one that
      * never opened if it only looked afterwards.
      */
@@ -149,6 +243,11 @@ class ApiProfileIT {
 
         assertThat(opened).isFalse();
         assertThatThrownBy(() -> new Socket(LOCALHOST, freePort).close()).isInstanceOf(ConnectException.class);
+    }
+
+    private static SpringApplicationBuilder withProfile(String profile, Class<?>... sources) {
+        var application = new SpringApplicationBuilder(sources);
+        return profile.isEmpty() ? application : application.profiles(profile);
     }
 
     private static SpringApplicationBuilder apiAndMigrate(Class<?>... sources) {
