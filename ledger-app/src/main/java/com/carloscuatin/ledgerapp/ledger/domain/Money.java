@@ -103,7 +103,7 @@ public record Money(long minorUnits, Currency currency) {
         Objects.requireNonNull(currency, "currency");
         int digits = currency.getDefaultFractionDigits();
         if (digits < 0) {
-            throw new IllegalArgumentException("Currency without a scale: " + currency.getCurrencyCode());
+            throw new CurrencyWithoutScaleException(currency);
         }
         return digits;
     }

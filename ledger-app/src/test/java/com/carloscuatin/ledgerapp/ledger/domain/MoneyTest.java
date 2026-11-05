@@ -32,8 +32,21 @@ class MoneyTest {
     void currenciesWithoutAScaleAreRejected(String code) {
         var currency = Currency.getInstance(code);
 
-        assertThatThrownBy(() -> new Money(1, currency)).isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(() -> Money.parse("10", currency)).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> new Money(1, currency))
+                .isInstanceOf(CurrencyWithoutScaleException.class)
+                .isInstanceOf(DomainException.class)
+                .hasMessageContaining(code);
+        assertThatThrownBy(() -> Money.ofMinor(1, currency)).isInstanceOf(CurrencyWithoutScaleException.class);
+        assertThatThrownBy(() -> Money.zero(currency)).isInstanceOf(CurrencyWithoutScaleException.class);
+        assertThatThrownBy(() -> Money.parse("10", currency)).isInstanceOf(CurrencyWithoutScaleException.class);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"10.005", "not an amount", "0000000000000000000000000000000000"})
+    void aCurrencyWithoutAScaleIsReportedWhateverTheAmountSays(String text) {
+        var gold = Currency.getInstance("XAU");
+
+        assertThatThrownBy(() -> Money.parse(text, gold)).isInstanceOf(CurrencyWithoutScaleException.class);
     }
 
     @Test
