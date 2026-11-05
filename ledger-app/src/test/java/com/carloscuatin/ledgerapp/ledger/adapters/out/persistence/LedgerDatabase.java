@@ -41,7 +41,7 @@ public final class LedgerDatabase {
     }
 
     /** Starts what a deployment runs before the application, as a context the caller closes. */
-    static ConfigurableApplicationContext startMigrateProfile() {
+    public static ConfigurableApplicationContext startMigrateProfile() {
         return new SpringApplicationBuilder(LedgerApplication.class).profiles("migrate")
                 .run(arguments(SERVER.getJdbcUrl(), "ledger_migrator", "test-only-migrator"));
     }
@@ -53,9 +53,33 @@ public final class LedgerDatabase {
     }
 
     /** Starts the application without a profile on a database, as a context the caller closes. */
-    static ConfigurableApplicationContext startApplication(String url) {
+    public static ConfigurableApplicationContext startApplication(String url) {
         return new SpringApplicationBuilder(LedgerApplication.class)
                 .run(arguments(url, "ledger_app", "test-only-app"));
+    }
+
+    /** Starts the server on a port, 0 for any free one, as a context the caller closes. */
+    public static ConfigurableApplicationContext startApi(String username, String password, int port) {
+        return new SpringApplicationBuilder(LedgerApplication.class).profiles("api").run(
+                arguments(SERVER.getJdbcUrl(), username, password, "--server.port=" + port));
+    }
+
+    /**
+     * The server as the application's role, with what a test adds to it, for a test that needs the whole start of the
+     * process in front of it or must be free to break the process. Spring caches a context it starts for a test class and
+     * shares it, which is why those tests do not use one.
+     */
+    public static ConfigurableApplicationContext startApi(List<Class<?>> extraSources, String... extraArguments) {
+        var arguments = new ArrayList<>(List.of(extraArguments));
+        arguments.add("--server.port=0");
+        return new SpringApplicationBuilder(LedgerApplication.class).sources(extraSources.toArray(Class<?>[]::new))
+                .profiles("api")
+                .run(arguments(SERVER.getJdbcUrl(), "ledger_app", "test-only-app", arguments.toArray(String[]::new)));
+    }
+
+    /** The command line of a process that connects to a database as the migrator. */
+    public static String[] argumentsAsTheMigrator(String url, String... extraArguments) {
+        return arguments(url, "ledger_migrator", "test-only-migrator", extraArguments);
     }
 
     /**
@@ -76,15 +100,15 @@ public final class LedgerDatabase {
                 arguments(SERVER.getJdbcUrl(), username, password, "--spring.main.lazy-initialization=true"));
     }
 
-    static String superuserName() {
+    public static String superuserName() {
         return SERVER.getUsername();
     }
 
-    static String superuserPassword() {
+    public static String superuserPassword() {
         return SERVER.getPassword();
     }
 
-    static String url() {
+    public static String url() {
         return SERVER.getJdbcUrl();
     }
 
@@ -95,6 +119,43 @@ public final class LedgerDatabase {
             statement.execute("CREATE DATABASE " + name);
         }
         return urlOf(name);
+    }
+
+    /** An empty database where the migrator may create objects, which it can only do after being granted that. */
+    public static String createEmptyDatabaseForTheMigrator() throws SQLException {
+        var url = createEmptyDatabase();
+        try (var connection = asSuperuser(url); var statement = connection.createStatement()) {
+            statement.execute("GRANT USAGE, CREATE ON SCHEMA public TO ledger_migrator");
+        }
+        return url;
+    }
+
+    /** The versions a database records as successfully applied, empty when it has no migration history at all. */
+    public static List<String> appliedMigrations(String url) throws SQLException {
+        if (!tableExists(url, "flyway_schema_history")) {
+            return List.of();
+        }
+        try (var connection = asSuperuser(url);
+                var statement = connection.createStatement();
+                var rows = statement.executeQuery(
+                        "SELECT version FROM flyway_schema_history WHERE success ORDER BY installed_rank")) {
+            var versions = new ArrayList<String>();
+            while (rows.next()) {
+                versions.add(rows.getString(1));
+            }
+            return versions;
+        }
+    }
+
+    public static boolean tableExists(String url, String table) throws SQLException {
+        try (var connection = asSuperuser(url);
+                var statement = connection.prepareStatement("SELECT to_regclass(?)")) {
+            statement.setString(1, "public." + table);
+            try (var rows = statement.executeQuery()) {
+                rows.next();
+                return rows.getString(1) != null;
+            }
+        }
     }
 
     static String urlOf(String database) {
@@ -119,13 +180,17 @@ public final class LedgerDatabase {
         return DriverManager.getConnection(SERVER.getJdbcUrl(), "ledger_app", "test-only-app");
     }
 
+    static Connection asApplication(String url) throws SQLException {
+        return DriverManager.getConnection(url, "ledger_app", "test-only-app");
+    }
+
     /** The role that owns the tables and runs the migrations. */
     static Connection asMigrator() throws SQLException {
         return DriverManager.getConnection(SERVER.getJdbcUrl(), "ledger_migrator", "test-only-migrator");
     }
 
     /** Sees past row level security, so it can only ever be a control that checks what really is in a table. */
-    static Connection asSuperuser() throws SQLException {
+    public static Connection asSuperuser() throws SQLException {
         return asSuperuser(SERVER.getJdbcUrl());
     }
 

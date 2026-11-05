@@ -22,6 +22,8 @@ jobs:
     # The scheduled run only rescans dependencies: the code did not change.
     if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
+    # Far above a normal run, to leave room for growth and a cold cache: this only ends a run that hung.
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
         with:
@@ -47,6 +49,7 @@ jobs:
     # Pull requests only: a merge to main does not change the code the pull request already measured.
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
         with:
@@ -68,6 +71,7 @@ jobs:
 
   trivy:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
         with:

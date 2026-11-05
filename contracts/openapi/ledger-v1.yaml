@@ -1,0 +1,378 @@
+openapi: 3.0.3
+info:
+  title: Ledger API
+  version: "1"
+  description: |
+    Transfers between the accounts of a tenant.
+
+    Every request needs an authenticated principal, and the tenant of a request is the tenant of its
+    principal. No header, parameter, body field or cursor can choose another one.
+
+    A rejection by the application is a `Problem`, whose `type` is the stable value to program against:
+    `title` and `detail` are constant for each type and never repeat what the client sent. What the web
+    server cannot take as a request never reaches the application: an escaped slash or a null in a path,
+    headers that are too large, `CONNECT`, an unknown `Expect` or another HTTP version get the server's
+    own short HTML, with no name or version in it.
+
+    An identifier comes back in one spelling, lowercase with dashes, which is the one to compare. In a
+    request the server also reads other spellings of the same identifier, which this document does not
+    promise: uppercase, and in a body surrounding spaces, or in a path shortened groups. An identifier
+    only needs to be well formed: the accounts of a transfer are not checked against anything.
+servers:
+  - url: /v1
+tags:
+  - name: Transfers
+    description: Holds on an amount between two accounts, and their outcome.
+paths:
+  /transfers:
+    post:
+      tags:
+        - Transfers
+      operationId: createTransfer
+      summary: Create a hold
+      description: |
+        Stores a hold for the amount and returns it. Every call creates its own hold, so repeating a
+        request creates another one.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateTransferRequest"
+      responses:
+        "201":
+          description: The stored hold.
+          headers:
+            Location:
+              description: Path of the stored hold, relative to the host.
+              required: true
+              schema:
+                type: string
+                format: uri-reference
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Transfer"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/TenantRequired"
+        "406":
+          $ref: "#/components/responses/NotAcceptable"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "422":
+          $ref: "#/components/responses/UnprocessableContent"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    get:
+      tags:
+        - Transfers
+      operationId: listTransfers
+      summary: List transfers, newest first
+      description: |
+        Walks the transfers of the tenant from the newest to the oldest. That order holds to the
+        millisecond: transfers created within the same millisecond have no order among themselves.
+        Following `nextCursor` visits each transfer that existed when the walk began once, even if new
+        ones arrive during it. A transfer created during a walk may not appear in it, so this is not a
+        way to follow new events.
+      parameters:
+        - name: cursor
+          in: query
+          required: false
+          description: The `nextCursor` of the previous page. Its content is opaque and may change.
+          schema:
+            type: string
+            maxLength: 64
+        - name: limit
+          in: query
+          required: false
+          description: |
+            Largest number of transfers in the page. Only a plain decimal is promised: other spellings
+            of an integer the server happens to read, like leading zeros, may stop working. If it is
+            repeated, the first one counts.
+          schema:
+            type: integer
+            format: int32
+            minimum: 1
+            maximum: 100
+            default: 50
+      responses:
+        "200":
+          description: One page of transfers.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TransferPage"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/TenantRequired"
+        "406":
+          $ref: "#/components/responses/NotAcceptable"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /transfers/{id}:
+    get:
+      tags:
+        - Transfers
+      operationId: getTransfer
+      summary: Read a transfer
+      description: A transfer of another tenant answers exactly like one that does not exist.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Identifier of the transfer.
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: The transfer.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Transfer"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/TenantRequired"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "406":
+          $ref: "#/components/responses/NotAcceptable"
+        "500":
+          $ref: "#/components/responses/InternalError"
+components:
+  responses:
+    BadRequest:
+      description: The request is malformed or breaks a constraint of this contract.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    Unauthenticated:
+      description: The request has no authenticated principal.
+      headers:
+        WWW-Authenticate:
+          description: The authentication scheme the API expects.
+          required: true
+          schema:
+            type: string
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    TenantRequired:
+      description: The authenticated principal has no tenant.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    NotFound:
+      description: The transfer does not exist for the tenant of the principal.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    NotAcceptable:
+      description: The API cannot answer in a representation the `Accept` header allows.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    UnsupportedMediaType:
+      description: The body is not `application/json`.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    UnprocessableContent:
+      description: The request is well formed and the ledger does not accept it.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    InternalError:
+      description: An unexpected failure. The response reveals nothing about it.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+  schemas:
+    Amount:
+      type: string
+      description: |
+        A decimal number as a string, so no client or parser rounds it. A response carries it with
+        exactly as many decimals as its currency has.
+      maxLength: 32
+      pattern: ^[0-9]+(\.[0-9]+)?$
+    CurrencyCode:
+      type: string
+      description: Alphabetic ISO 4217 code. A well formed code the ledger does not operate is refused.
+      pattern: ^[A-Z]{3}$
+    TransferStatus:
+      type: string
+      description: |
+        `PENDING` holds the amount. `POSTED`, `VOIDED` and `EXPIRED` are the outcomes that end a hold.
+      enum:
+        - PENDING
+        - POSTED
+        - VOIDED
+        - EXPIRED
+    CreateTransferRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - sourceAccountId
+        - destinationAccountId
+        - amount
+        - currency
+      properties:
+        sourceAccountId:
+          type: string
+          format: uuid
+        destinationAccountId:
+          type: string
+          format: uuid
+        amount:
+          $ref: "#/components/schemas/Amount"
+        currency:
+          $ref: "#/components/schemas/CurrencyCode"
+    Transfer:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - sourceAccountId
+        - destinationAccountId
+        - amount
+        - currency
+        - status
+      properties:
+        id:
+          type: string
+          format: uuid
+        sourceAccountId:
+          type: string
+          format: uuid
+        destinationAccountId:
+          type: string
+          format: uuid
+        amount:
+          $ref: "#/components/schemas/Amount"
+        currency:
+          $ref: "#/components/schemas/CurrencyCode"
+        status:
+          $ref: "#/components/schemas/TransferStatus"
+    TransferPage:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+        - nextCursor
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Transfer"
+        nextCursor:
+          type: string
+          nullable: true
+          description: Pass it as `cursor` to read the next page. `null` on the last page.
+    ProblemError:
+      type: object
+      additionalProperties: false
+      description: |
+        One rejected input, named by `pointer` when it is in the body or by `parameter` when it is in
+        the query. It never carries the rejected value.
+      required:
+        - reason
+      properties:
+        pointer:
+          type: string
+          description: JSON Pointer to the field of the body.
+        parameter:
+          type: string
+          description: Name of the query parameter.
+        reason:
+          type: string
+          enum:
+            - required
+            - invalid
+    Problem:
+      type: object
+      additionalProperties: false
+      description: |
+        A rejection, as RFC 9457 describes it. The catalog of `type`, each under
+        `https://ledger.carloscuatin.com/problems/`:
+
+        | Slug | Status | When |
+        |---|---|---|
+        | `unauthenticated` | 401 | The request has no authenticated principal |
+        | `tenant-required` | 403 | The authenticated principal has no tenant |
+        | `malformed-request` | 400 | Invalid JSON, an unknown or repeated field, a wrong JSON type, an empty body or one over 16 KiB, a parameter that cannot be converted |
+        | `validation-failed` | 400 | A required field missing or null, a broken pattern, length or limit. `errors` lists them |
+        | `invalid-cursor` | 400 | A cursor that does not decode to a position |
+        | `unsupported-version` | 400 | A well formed version of the API that is not served |
+        | `bad-request` | 400 | Any other request the server refuses as invalid, like a path parameter or a query that cannot be decoded |
+        | `not-found` | 404 | A route that does not exist, or a transfer the tenant does not have |
+        | `method-not-allowed` | 405 | A method the route does not support. The `Allow` header lists the ones it does |
+        | `not-acceptable` | 406 | No representation the `Accept` header allows |
+        | `unsupported-media-type` | 415 | A body that is not `application/json` |
+        | `invalid-amount` | 422 | An amount beyond the scale of its currency or the range of the ledger, or not positive |
+        | `currency-not-enabled` | 422 | A currency that does not exist, has no minor unit, or is not enabled |
+        | `same-account` | 422 | The same account as source and destination |
+        | `internal-error` | 500 | An unexpected failure |
+      required:
+        - type
+        - title
+        - status
+        - detail
+        - instance
+      properties:
+        type:
+          type: string
+          description: Identifies the kind of problem. It is stable, and it does not need to resolve.
+          enum:
+            - https://ledger.carloscuatin.com/problems/unauthenticated
+            - https://ledger.carloscuatin.com/problems/tenant-required
+            - https://ledger.carloscuatin.com/problems/malformed-request
+            - https://ledger.carloscuatin.com/problems/validation-failed
+            - https://ledger.carloscuatin.com/problems/invalid-cursor
+            - https://ledger.carloscuatin.com/problems/unsupported-version
+            - https://ledger.carloscuatin.com/problems/bad-request
+            - https://ledger.carloscuatin.com/problems/not-found
+            - https://ledger.carloscuatin.com/problems/method-not-allowed
+            - https://ledger.carloscuatin.com/problems/not-acceptable
+            - https://ledger.carloscuatin.com/problems/unsupported-media-type
+            - https://ledger.carloscuatin.com/problems/invalid-amount
+            - https://ledger.carloscuatin.com/problems/currency-not-enabled
+            - https://ledger.carloscuatin.com/problems/same-account
+            - https://ledger.carloscuatin.com/problems/internal-error
+        title:
+          type: string
+          description: Constant for each type.
+        status:
+          type: integer
+          format: int32
+          description: The HTTP status of the response.
+        detail:
+          type: string
+          description: Constant for each type. It never repeats what the client sent.
+        instance:
+          type: string
+          format: uri-reference
+          description: The path of the request.
+        errors:
+          type: array
+          description: The inputs a `validation-failed` problem rejects.
+          items:
+            $ref: "#/components/schemas/ProblemError"

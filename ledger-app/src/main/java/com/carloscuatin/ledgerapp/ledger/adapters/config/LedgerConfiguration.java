@@ -6,7 +6,10 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Profile;
 
 import com.carloscuatin.ledgerapp.ledger.application.CreateTransfer;
+import com.carloscuatin.ledgerapp.ledger.application.FindTransfer;
 import com.carloscuatin.ledgerapp.ledger.application.IdGenerator;
+import com.carloscuatin.ledgerapp.ledger.application.ListTransfers;
+import com.carloscuatin.ledgerapp.ledger.application.TransferQueries;
 import com.carloscuatin.ledgerapp.ledger.application.Transfers;
 
 /**
@@ -21,5 +24,15 @@ class LedgerConfiguration {
     @Bean
     CreateTransfer createTransfer(LedgerProperties properties, IdGenerator ids, Transfers transfers) {
         return new CreateTransfer(properties.currencies(), ids, transfers);
+    }
+
+    @Bean
+    FindTransfer findTransfer(TransferQueries queries) {
+        return new FindTransfer(queries);
+    }
+
+    @Bean
+    ListTransfers listTransfers(TransferQueries queries) {
+        return new ListTransfers(queries);
     }
 }

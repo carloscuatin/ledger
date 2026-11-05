@@ -103,3 +103,10 @@ removed by changing the shape of the code, not by excluding it.
   including a reversed journal entry that still balanced and a comparison by reference.
 - Choosing an enum or a sealed type is a question of shape: the same shape is an enum, different
   data per case is a sealed type.
+
+## Amended
+
+A currency without a scale raises a domain error of its own, not a standard Java exception. Once a
+client can name a currency, it is no longer only a programming error: whose mistake it is depends on
+where the currency came from, so a client's is refused, and one read from a stored row is a failure
+of this side.
