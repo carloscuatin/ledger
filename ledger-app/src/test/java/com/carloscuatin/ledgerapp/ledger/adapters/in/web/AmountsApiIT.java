@@ -121,8 +121,8 @@ class AmountsApiIT extends AuthenticatedApi {
     }
 
     /**
-     * Each of these is the client's to fix, and each used to reach the server as an uncaught exception, which logs an
-     * error with its trace. An error nobody on this side can act on hides the ones somebody should.
+     * Each of these is the client's to fix. As an uncaught exception, one would reach the server, which logs an error with
+     * its trace, and an error nobody on this side can act on hides the ones somebody should.
      */
     @Test
     @ExtendWith(OutputCaptureExtension.class)
