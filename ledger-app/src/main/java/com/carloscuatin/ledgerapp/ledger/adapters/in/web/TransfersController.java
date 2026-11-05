@@ -20,6 +20,7 @@ import com.carloscuatin.ledgerapp.ledger.application.FindTransfer;
 import com.carloscuatin.ledgerapp.ledger.application.ListTransfers;
 import com.carloscuatin.ledgerapp.ledger.application.TransferView;
 import com.carloscuatin.ledgerapp.ledger.domain.AccountId;
+import com.carloscuatin.ledgerapp.ledger.domain.CurrencyWithoutScaleException;
 import com.carloscuatin.ledgerapp.ledger.domain.Money;
 import com.carloscuatin.ledgerapp.ledger.domain.PendingTransfer;
 import com.carloscuatin.ledgerapp.ledger.domain.TransferId;
@@ -48,9 +49,7 @@ class TransfersController implements TransfersApi {
 
     @Override
     public ResponseEntity<Transfer> createTransfer(CreateTransferRequest request) {
-        var terms = new TransferTerms(new AccountId(request.sourceAccountId()),
-                new AccountId(request.destinationAccountId()),
-                Money.parse(request.amount(), currencyOf(request.currency())));
+        var terms = toTerms(request);
 
         var hold = AuthenticatedTenant.call(() -> createTransfer.create(terms));
 
@@ -76,18 +75,32 @@ class TransfersController implements TransfersApi {
         return ResponseEntity.ok(new TransferPage(items, page.next().map(Cursor::encode).orElse(null)));
     }
 
-    /** The contract fixes the shape of the code, not that it names a currency with minor units. */
-    private static Currency currencyOf(String code) {
-        Currency currency;
+    private static TransferTerms toTerms(CreateTransferRequest request) {
+        var source = new AccountId(request.sourceAccountId());
+        var destination = new AccountId(request.destinationAccountId());
+        var amount = parseAmount(request.amount(), currencyOf(request.currency()));
+        return new TransferTerms(source, destination, amount);
+    }
+
+    /**
+     * A currency without a scale is the client's to fix only here, where the client chose it. Translated at this call and
+     * not by a handler, because the same exception from a stored row is a failure of this side and has to stay one.
+     */
+    private static Money parseAmount(String amount, Currency currency) {
         try {
-            currency = Currency.getInstance(code);
+            return Money.parse(amount, currency);
+        } catch (CurrencyWithoutScaleException _) {
+            throw new UnusableCurrencyException();
+        }
+    }
+
+    /** The contract fixes the shape of the code, not that it names a currency. */
+    private static Currency currencyOf(String code) {
+        try {
+            return Currency.getInstance(code);
         } catch (IllegalArgumentException _) {
             throw new UnusableCurrencyException();
         }
-        if (currency.getDefaultFractionDigits() < 0) {
-            throw new UnusableCurrencyException();
-        }
-        return currency;
     }
 
     private static Transfer toContract(PendingTransfer hold) {
@@ -96,8 +109,12 @@ class TransfersController implements TransfersApi {
 
     private static Transfer toContract(TransferView view) {
         var terms = view.terms();
-        return new Transfer(view.id().value(), terms.source().value(), terms.destination().value(),
-                terms.amount().toDecimalString(), terms.amount().currency().getCurrencyCode(),
-                TransferStatus.fromValue(view.status().name()));
+        var id = view.id().value();
+        var source = terms.source().value();
+        var destination = terms.destination().value();
+        var amount = terms.amount().toDecimalString();
+        var currency = terms.amount().currency().getCurrencyCode();
+        var status = TransferStatus.fromValue(view.status().name());
+        return new Transfer(id, source, destination, amount, currency, status);
     }
 }

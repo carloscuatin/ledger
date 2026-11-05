@@ -38,7 +38,7 @@ class TransfersControllerTest {
                 UsernamePasswordAuthenticationToken.authenticated(new TestPrincipal(tenant), null, List.of()));
     }
 
-    /** ZZZ does not exist and XAU has no minor units: the JDK and the domain refuse each with a generic exception. */
+    /** One code the JDK does not know and one that the domain refuses for having no minor units. */
     @ParameterizedTest
     @ValueSource(strings = {"ZZZ", "XAU"})
     void aCodeWithNoUsableCurrencyIsRefusedBeforeTheUseCase(String code) {
@@ -48,10 +48,11 @@ class TransfersControllerTest {
         verifyNoInteractions(createTransfer);
     }
 
-    /** An amount is only judged in a currency that exists, whatever the order of the two fields in the body. */
-    @Test
-    void anUnusableCurrencyIsReportedEvenWithAnInvalidAmount() {
-        var request = new CreateTransferRequest(UUID.randomUUID(), UUID.randomUUID(), "10.005", "ZZZ");
+    /** An amount is only judged in a currency that can express it, whatever the order of the two fields in the body. */
+    @ParameterizedTest
+    @ValueSource(strings = {"ZZZ", "XAU"})
+    void anUnusableCurrencyIsReportedEvenWithAnInvalidAmount(String code) {
+        var request = new CreateTransferRequest(UUID.randomUUID(), UUID.randomUUID(), "10.005", code);
 
         assertThatThrownBy(() -> controller.createTransfer(request)).isInstanceOf(UnusableCurrencyException.class);
     }
