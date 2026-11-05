@@ -2,11 +2,9 @@ package com.carloscuatin.ledgerapp.ledger.adapters.in.web;
 
 import java.io.IOException;
 import java.net.URI;
-import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpRequest.BodyPublishers;
 import java.net.http.HttpResponse;
-import java.net.http.HttpResponse.BodyHandlers;
 import java.util.UUID;
 
 import org.springframework.boot.test.context.SpringBootTest;
@@ -32,8 +30,6 @@ abstract class AuthenticatedApi {
 
     static final JsonMapper JSON = JsonMapper.builder().build();
 
-    private static final HttpClient CLIENT = HttpClient.newHttpClient();
-
     @DynamicPropertySource
     static void connectAsTheApplication(DynamicPropertyRegistry registry) {
         LedgerDatabase.connectAsTheApplication(registry);
@@ -54,6 +50,11 @@ abstract class AuthenticatedApi {
         return requestAs(tenant.toString(), path);
     }
 
+    /** The raw text of a request, as it goes over the wire; the request has to say {@code Connection: close}. */
+    String overASocket(String request) throws IOException {
+        return TestHttp.overASocket(port, request);
+    }
+
     /** A valid body between two new accounts, for tests that care about something other than its content. */
     static HttpRequest.BodyPublisher aValidBody() {
         return BodyPublishers.ofString("""
@@ -66,6 +67,6 @@ abstract class AuthenticatedApi {
     }
 
     static HttpResponse<String> send(HttpRequest.Builder request) throws IOException, InterruptedException {
-        return CLIENT.send(request.build(), BodyHandlers.ofString());
+        return TestHttp.send(request);
     }
 }

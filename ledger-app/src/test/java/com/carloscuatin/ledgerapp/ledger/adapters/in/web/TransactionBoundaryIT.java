@@ -4,7 +4,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.tuple;
 
 import java.net.URI;
-import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.net.http.HttpResponse.BodyHandlers;
@@ -72,7 +71,6 @@ class TransactionBoundaryIT {
     private static final int CONCURRENT_REQUESTS = 100;
     private static final Duration POOL_QUEUE_DEADLINE = Duration.ofSeconds(20);
     private static final JsonMapper JSON = JsonMapper.builder().build();
-    private static final HttpClient CLIENT = HttpClient.newHttpClient();
 
     private static final String BEFORE_THE_CONTROLLER = "before the controller";
     private static final String BEFORE_THE_USE_CASE = "before the use case";
@@ -242,7 +240,7 @@ class TransactionBoundaryIT {
         MOMENTS.clear();
 
         var id = JSON.readTree(created.body()).path("id").asString();
-        var read = CLIENT.send(readingATransferAs(tenant, id), BodyHandlers.ofString());
+        var read = TestHttp.client().send(readingATransferAs(tenant, id), BodyHandlers.ofString());
 
         assertThat(read.statusCode()).isEqualTo(200);
         assertThat(MOMENTS).extracting(Moment::where, Moment::transaction, Moment::readOnly, Moment::tenant)
@@ -277,7 +275,7 @@ class TransactionBoundaryIT {
             for (var i = 0; i < CONCURRENT_REQUESTS; i++) {
                 var tenant = UUID.randomUUID();
                 tenants.add(tenant);
-                responses.add(CLIENT.sendAsync(creatingATransferAs(tenant), BodyHandlers.ofString()));
+                responses.add(TestHttp.client().sendAsync(creatingATransferAs(tenant), BodyHandlers.ofString()));
             }
             CompletableFuture.allOf(responses.toArray(CompletableFuture[]::new)).join();
         } finally {
@@ -296,19 +294,21 @@ class TransactionBoundaryIT {
     }
 
     private static HttpResponse<String> createATransferAs(UUID tenant) throws Exception {
-        return CLIENT.send(creatingATransferAs(tenant), BodyHandlers.ofString());
+        return TestHttp.client().send(creatingATransferAs(tenant), BodyHandlers.ofString());
     }
 
     private static HttpRequest readingATransferAs(UUID tenant, String id) {
         var port = ((WebServerApplicationContext) api).getWebServer().getPort();
-        return HttpRequest.newBuilder(URI.create("http://127.0.0.1:%d%s/%s".formatted(port, TRANSFERS, id)))
+        return TestHttp
+                .bounded(HttpRequest.newBuilder(URI.create("http://127.0.0.1:%d%s/%s".formatted(port, TRANSFERS, id))))
                 .header(TestAuthentication.PRINCIPAL_HEADER, tenant.toString())
                 .build();
     }
 
     private static HttpRequest creatingATransferAs(UUID tenant) {
         var port = ((WebServerApplicationContext) api).getWebServer().getPort();
-        var request = HttpRequest.newBuilder(URI.create("http://127.0.0.1:%d%s".formatted(port, TRANSFERS)))
+        var request = TestHttp
+                .bounded(HttpRequest.newBuilder(URI.create("http://127.0.0.1:%d%s".formatted(port, TRANSFERS))))
                 .header(TestAuthentication.PRINCIPAL_HEADER, tenant.toString());
         return AuthenticatedApi.postingJson(request, AuthenticatedApi.aValidBody()).build();
     }

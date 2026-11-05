@@ -38,6 +38,25 @@ final class ProblemAssertions {
         return problem;
     }
 
+    /**
+     * The same, for an answer read off a socket, where the client that parses a response could not have sent the request.
+     * A body of unknown length comes in chunks, so the lines that only give a chunk's size are dropped first.
+     */
+    static JsonNode assertProblemOnTheWire(String answer, ProblemType type, String instance) {
+        assertThat(answer).startsWith("HTTP/1.1 " + type.status().value() + " ");
+        var parts = answer.split("\r\n\r\n", 2);
+        assertThat(parts[0]).containsIgnoringCase("content-type: application/problem+json")
+                .containsIgnoringCase("x-content-type-options: nosniff")
+                .containsPattern("(?i)cache-control: .*no-store");
+        var problem = JSON.readTree(parts[1].replaceAll("(?m)^[0-9a-f]+$", ""));
+        assertThat(problem.path("type").asString()).isEqualTo(type.type().toString());
+        assertThat(problem.path("title").asString()).isEqualTo(type.title());
+        assertThat(problem.path("status").asInt()).isEqualTo(type.status().value());
+        assertThat(problem.path("detail").asString()).isEqualTo(type.detail());
+        assertThat(problem.path("instance").asString()).isEqualTo(instance);
+        return problem;
+    }
+
     static void assertRejectedInputs(JsonNode problem, List<Map<String, String>> inputs) {
         assertThat(JSON.treeToValue(problem.path("errors"), List.class)).containsExactlyElementsOf(inputs);
     }

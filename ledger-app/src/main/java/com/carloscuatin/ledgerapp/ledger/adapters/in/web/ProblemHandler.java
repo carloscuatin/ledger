@@ -3,6 +3,7 @@ package com.carloscuatin.ledgerapp.ledger.adapters.in.web;
 import java.util.Comparator;
 import java.util.List;
 
+import org.apache.tomcat.util.http.InvalidParameterException;
 import org.jspecify.annotations.Nullable;
 import org.springframework.beans.TypeMismatchException;
 import org.springframework.context.annotation.Profile;
@@ -11,6 +12,7 @@ import org.springframework.http.HttpStatusCode;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.http.converter.HttpMessageNotWritableException;
 import org.springframework.validation.BindingResult;
 import org.springframework.web.HttpMediaTypeNotAcceptableException;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
@@ -22,6 +24,7 @@ import org.springframework.web.context.request.ServletWebRequest;
 import org.springframework.web.context.request.WebRequest;
 import org.springframework.web.method.annotation.HandlerMethodValidationException;
 import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExceptionHandler;
+import org.springframework.web.util.DisconnectedClientHelper;
 
 import com.carloscuatin.ledgerapp.ledger.domain.CurrencyNotEnabledException;
 import com.carloscuatin.ledgerapp.ledger.domain.InvalidAmountException;
@@ -36,7 +39,8 @@ import jakarta.validation.constraints.NotNull;
  * fix and leaves no trace in the log, where it would hide real failures and repeat what the client sent. Any other
  * exception has no handler here on purpose: it reaches the server, which logs it with its trace and forwards the request
  * to {@link ContainerErrorController}, the same way as a failure in a filter, which no handler here could ever see. Only
- * a failure inside the framework that it reports as an exception of its own is logged here, because it stops here.
+ * a failure inside the framework that it reports as an exception of its own is logged here, because it stops here, and a
+ * client that hangs up while being answered is no failure at all.
  */
 @ControllerAdvice
 @Profile("api")
@@ -76,6 +80,16 @@ class ProblemHandler extends ResponseEntityExceptionHandler {
         return answer(ProblemType.TENANT_REQUIRED, request);
     }
 
+    /**
+     * The server decodes a query the first time something asks for a parameter, and says what it could not decode in this
+     * exception's message, which is why it must not reach the server's log: a line break in a value would print a line of
+     * the client's making there. The message itself is not used here, nor is the decoded query.
+     */
+    @ExceptionHandler(InvalidParameterException.class)
+    ResponseEntity<Object> unreadableQuery(WebRequest request) {
+        return answer(ProblemType.BAD_REQUEST, request);
+    }
+
     /** The parent class also logs this one, and the methods a scan of the API tries are not worth a warning each. */
     @Override
     protected @Nullable ResponseEntity<Object> handleHttpRequestMethodNotSupported(
@@ -88,6 +102,11 @@ class ProblemHandler extends ResponseEntityExceptionHandler {
     @Override
     protected @Nullable ResponseEntity<Object> handleExceptionInternal(Exception failure, @Nullable Object body,
             HttpHeaders headers, HttpStatusCode status, WebRequest request) {
+        // Writing only: a body that ends early while being read looks the same, and its client may be waiting for an answer.
+        if (failure instanceof HttpMessageNotWritableException
+                && DisconnectedClientHelper.isClientDisconnectedException(failure)) {
+            return null;
+        }
         var type = typeOf(failure, status);
         if (type == ProblemType.INTERNAL_ERROR) {
             logger.error("The framework failed while serving a request", failure);

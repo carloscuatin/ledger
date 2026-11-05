@@ -7,14 +7,13 @@ import static org.mockito.Mockito.when;
 
 import java.io.IOException;
 import java.net.URI;
-import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
-import java.net.http.HttpResponse.BodyHandlers;
 import java.util.Currency;
 import java.util.List;
 import java.util.UUID;
 
+import org.apache.catalina.connector.ClientAbortException;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.boot.test.context.TestConfiguration;
@@ -36,8 +35,11 @@ import com.zaxxer.hikari.HikariDataSource;
 
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
+import jakarta.servlet.ServletOutputStream;
+import jakarta.servlet.WriteListener;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import jakarta.servlet.http.HttpServletResponseWrapper;
 
 /**
  * Two readers want opposite things from a failure of this side: operators need all of it in the log, and whoever sent
@@ -49,7 +51,7 @@ class UnexpectedFailureIT extends AuthenticatedApi {
     private static final String TRANSFERS = "/v1/transfers";
     private static final String MARK = "SYNTHETICMARK";
     private static final String FAIL_IN_A_FILTER = "X-Test-Fail-In-Filter";
-    private static final HttpClient CLIENT = HttpClient.newHttpClient();
+    private static final String CLIENT_HANGS_UP = "X-Test-Client-Hangs-Up";
 
     /** Spring applies this to the production chain, in this class's context only. */
     @TestConfiguration(proxyBeanMethods = false)
@@ -70,8 +72,67 @@ class UnexpectedFailureIT extends AuthenticatedApi {
         }
     }
 
+    /**
+     * Whether a client's hang-up reaches the server while it writes depends on the buffers of two machines, so a test
+     * cannot provoke it on a real socket every time. This fails the write the way the server does when it happens, with
+     * the real framework above it.
+     */
+    @TestConfiguration(proxyBeanMethods = false)
+    static class AClientThatHangsUp {
+
+        @Bean
+        Customizer<HttpSecurity> responseThatFailsOnDemand() {
+            return http -> http.addFilterBefore(new OncePerRequestFilter() {
+                @Override
+                protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response,
+                        FilterChain chain) throws ServletException, IOException {
+                    chain.doFilter(request, request.getHeader(CLIENT_HANGS_UP) == null ? response
+                            : new HungUpResponse(response));
+                }
+            }, AnonymousAuthenticationFilter.class);
+        }
+    }
+
+    private static final class HungUpResponse extends HttpServletResponseWrapper {
+
+        HungUpResponse(HttpServletResponse response) {
+            super(response);
+        }
+
+        @Override
+        public boolean isCommitted() {
+            return true;
+        }
+
+        @Override
+        public ServletOutputStream getOutputStream() {
+            return new ServletOutputStream() {
+                @Override
+                public boolean isReady() {
+                    return true;
+                }
+
+                @Override
+                public void setWriteListener(WriteListener listener) {
+                }
+
+                @Override
+                public void write(int value) throws IOException {
+                    throw new ClientAbortException(new IOException("Broken pipe"));
+                }
+            };
+        }
+    }
+
     @MockitoBean
     private CreateTransfer createTransfer;
+
+    @Test
+    void aClientThatHangsUpWhileBeingAnsweredIsNotAFailure(CapturedOutput output) throws Exception {
+        send(requestAs(UUID.randomUUID(), TRANSFERS).header(CLIENT_HANGS_UP, "yes"));
+
+        assertThat(output).doesNotContain(" ERROR ").doesNotContain(" WARN ").doesNotContain("Broken pipe");
+    }
 
     @Test
     void aFailingUseCaseRevealsNothingAndIsLoggedWithItsTrace(CapturedOutput output) throws Exception {
@@ -153,6 +214,6 @@ class UnexpectedFailureIT extends AuthenticatedApi {
         var port = ((WebServerApplicationContext) api).getWebServer().getPort();
         var request = HttpRequest.newBuilder(URI.create("http://127.0.0.1:%d%s".formatted(port, TRANSFERS)))
                 .header(TestAuthentication.PRINCIPAL_HEADER, UUID.randomUUID().toString());
-        return CLIENT.send(postingJson(request, aValidBody()).build(), BodyHandlers.ofString());
+        return TestHttp.send(postingJson(request, aValidBody()));
     }
 }

@@ -4,9 +4,7 @@ import static com.carloscuatin.ledgerapp.ledger.adapters.in.web.ProblemAssertion
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.IOException;
-import java.net.Socket;
 import java.net.http.HttpRequest.BodyPublishers;
-import java.nio.charset.StandardCharsets;
 import java.util.UUID;
 
 import org.junit.jupiter.api.Test;
@@ -168,18 +166,13 @@ class ReadTransferApiIT extends AuthenticatedApi {
     }
 
     private String rawAnswerTo(UUID tenant, String method, UUID id) throws IOException {
-        var uri = request("/").build().uri();
-        try (var socket = new Socket(uri.getHost(), uri.getPort())) {
-            socket.getOutputStream().write("""
-                    %s %s%s HTTP/1.1\r
-                    Host: ledger\r
-                    %s: %s\r
-                    Connection: close\r
-                    \r
-                    """.formatted(method, TRANSFERS, id, TestAuthentication.PRINCIPAL_HEADER, tenant)
-                    .getBytes(StandardCharsets.US_ASCII));
-            return new String(socket.getInputStream().readAllBytes(), StandardCharsets.ISO_8859_1);
-        }
+        return overASocket("""
+                %s %s%s HTTP/1.1\r
+                Host: ledger\r
+                %s: %s\r
+                Connection: close\r
+                \r
+                """.formatted(method, TRANSFERS, id, TestAuthentication.PRINCIPAL_HEADER, tenant));
     }
 
     private static String comparable(String answer, UUID id) {

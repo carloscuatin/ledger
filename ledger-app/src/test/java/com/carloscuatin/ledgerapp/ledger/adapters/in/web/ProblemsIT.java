@@ -2,6 +2,7 @@ package com.carloscuatin.ledgerapp.ledger.adapters.in.web;
 
 import static com.carloscuatin.ledgerapp.ledger.adapters.in.web.ProblemAssertions.assertNeitherCachedNorSniffed;
 import static com.carloscuatin.ledgerapp.ledger.adapters.in.web.ProblemAssertions.assertProblem;
+import static com.carloscuatin.ledgerapp.ledger.adapters.in.web.ProblemAssertions.assertProblemOnTheWire;
 import static com.carloscuatin.ledgerapp.ledger.adapters.in.web.ProblemAssertions.assertRejectedInputs;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -13,6 +14,7 @@ import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.boot.test.system.CapturedOutput;
 import org.springframework.boot.test.system.OutputCaptureExtension;
@@ -231,5 +233,92 @@ class ProblemsIT extends AuthenticatedApi {
             assertNeitherCachedNorSniffed(response.headers());
         });
         assertThat(output).doesNotContainIgnoringCase(MARK).doesNotContain(" ERROR ").doesNotContain(" WARN ");
+    }
+
+    /**
+     * The last one wins when a parser reads them in order, and a client, a gateway and a signature check may each have
+     * read a different one, so what they agreed on is not what is stored.
+     */
+    @ParameterizedTest
+    @ValueSource(strings = {"amount", "currency", "sourceAccountId"})
+    @ExtendWith(OutputCaptureExtension.class)
+    void aRepeatedFieldIsRefused(String field, CapturedOutput output) throws Exception {
+        var tenant = UUID.randomUUID();
+        var body = """
+                {"%s": "SYNTHETICMARK", "sourceAccountId": "%s", "destinationAccountId": "%s", "amount": "150000.00",
+                 "currency": "COP"}
+                """.formatted(field, UUID.randomUUID(), UUID.randomUUID());
+
+        var response = send(postingJson(requestAs(tenant, TRANSFERS), BodyPublishers.ofString(body)));
+
+        assertProblem(response, ProblemType.MALFORMED_REQUEST, TRANSFERS);
+        assertThat(response.body()).doesNotContain(MARK);
+        assertThat(TransferRows.countInTheTableFor(tenant)).isZero();
+        assertThat(output).doesNotContain(MARK).doesNotContain(" ERROR ").doesNotContain(" WARN ");
+    }
+
+    /** The contract takes only JSON, so a body in this format is not something to be parsed and found wanting. */
+    @ParameterizedTest
+    @CsvSource(delimiter = '|', value = {
+        "multipart/form-data | SYNTHETICMARK",
+        "multipart/form-data; boundary=b | --b\\r\\nContent-Dis",
+        "multipart/form-data; boundary=b | --b\\r\\nContent-Disposition: form-data; name=\"x\"\\r\\n\\r\\nv\\r\\n--b--\\r\\n"})
+    @ExtendWith(OutputCaptureExtension.class)
+    void aMultipartBodyIsAnUnsupportedType(String contentType, String body, CapturedOutput output) throws Exception {
+        var tenant = UUID.randomUUID();
+
+        var response = send(requestAs(tenant, TRANSFERS).header("Content-Type", contentType)
+                .POST(BodyPublishers.ofString(body.replace("\\r\\n", "\r\n"))));
+
+        assertProblem(response, ProblemType.UNSUPPORTED_MEDIA_TYPE, TRANSFERS);
+        assertThat(TransferRows.countInTheTableFor(tenant)).isZero();
+        assertThat(output).doesNotContain(MARK).doesNotContain(" ERROR ").doesNotContain(" WARN ");
+    }
+
+    /** {@link UnauthenticatedAccessIT} sees the same without a principal, where the same rule is the only answer. */
+    @Test
+    @ExtendWith(OutputCaptureExtension.class)
+    void aPathParameterThatCannotBeDecodedIsRefusedQuietly(CapturedOutput output) throws Exception {
+        var answer = overASocket("GET /v1/transfers;a=%ZZSYNTHETICMARK HTTP/1.1\r\nHost: localhost\r\n"
+                + TestAuthentication.PRINCIPAL_HEADER + ": " + UUID.randomUUID() + "\r\nConnection: close\r\n\r\n");
+
+        assertProblemOnTheWire(answer, ProblemType.BAD_REQUEST, "/");
+        assertThat(output).doesNotContain(MARK).doesNotContain(" ERROR ").doesNotContain("\tat ");
+    }
+
+    /**
+     * The server decodes a query the first time something asks for a parameter, and quotes what it could not decode in
+     * its exception: a value with a line break in it would print a line of the client's making in the log, and a query
+     * only a server could refuse is not a failure of this side.
+     */
+    @ParameterizedTest
+    @ValueSource(strings = {
+        "limit=%0A2026-01-01T00:00:00.000-05:00%20ERROR%20SYNTHETICMARK%0Dx%FF",
+        "%0ASYNTHETICMARK%FF=1",
+        "limit=%ZZSYNTHETICMARK",
+        "limit=SYNTHETICMARK%",
+        "cursor=%FF%FE&SYNTHETICMARK=1"})
+    @ExtendWith(OutputCaptureExtension.class)
+    void aQueryTheServerCannotDecodeIsRefusedQuietly(String query, CapturedOutput output) throws Exception {
+        var answer = queryOverASocket(query);
+
+        assertProblemOnTheWire(answer, ProblemType.BAD_REQUEST, TRANSFERS);
+        assertThat(answer).doesNotContain(MARK);
+        assertThat(output).doesNotContain(MARK).doesNotContain(" ERROR ").doesNotContain(" WARN ")
+                .doesNotContain("\tat ");
+    }
+
+    @Test
+    @ExtendWith(OutputCaptureExtension.class)
+    void aQueryWithMoreParametersThanTheServerReadsIsRefusedQuietly(CapturedOutput output) throws Exception {
+        var answer = queryOverASocket("a&".repeat(1500) + "limit=1");
+
+        assertProblemOnTheWire(answer, ProblemType.BAD_REQUEST, TRANSFERS);
+        assertThat(output).doesNotContain(" ERROR ").doesNotContain(" WARN ").doesNotContain("\tat ");
+    }
+
+    private String queryOverASocket(String query) throws Exception {
+        return overASocket("GET " + TRANSFERS + "?" + query + " HTTP/1.1\r\nHost: localhost\r\n"
+                + TestAuthentication.PRINCIPAL_HEADER + ": " + UUID.randomUUID() + "\r\nConnection: close\r\n\r\n");
     }
 }

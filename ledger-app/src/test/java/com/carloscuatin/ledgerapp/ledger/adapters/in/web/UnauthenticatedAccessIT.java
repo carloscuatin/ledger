@@ -2,20 +2,20 @@ package com.carloscuatin.ledgerapp.ledger.adapters.in.web;
 
 import static com.carloscuatin.ledgerapp.ledger.adapters.in.web.ProblemAssertions.assertNeitherCachedNorSniffed;
 import static com.carloscuatin.ledgerapp.ledger.adapters.in.web.ProblemAssertions.assertProblem;
+import static com.carloscuatin.ledgerapp.ledger.adapters.in.web.ProblemAssertions.assertProblemOnTheWire;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.IOException;
-import java.net.Socket;
 import java.net.URI;
-import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpRequest.BodyPublishers;
 import java.net.http.HttpResponse;
-import java.net.http.HttpResponse.BodyHandlers;
-import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
 
+import org.apache.catalina.Context;
+import org.apache.tomcat.util.descriptor.web.FilterMap;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -27,6 +27,8 @@ import org.springframework.boot.test.context.SpringBootTest.WebEnvironment;
 import org.springframework.boot.test.system.CapturedOutput;
 import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.boot.test.web.server.LocalServerPort;
+import org.springframework.boot.tomcat.TomcatWebServer;
+import org.springframework.boot.web.server.context.WebServerApplicationContext;
 import org.springframework.context.ApplicationContext;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.AuthenticationProvider;
@@ -53,7 +55,6 @@ import tools.jackson.databind.json.JsonMapper;
 class UnauthenticatedAccessIT {
 
     private static final JsonMapper JSON = JsonMapper.builder().build();
-    private static final HttpClient CLIENT = HttpClient.newHttpClient();
 
     /** Every filter of the chain, by name and in order, so a new one has to be looked at, whatever it is called. */
     static final List<String> PRODUCTION_FILTERS = List.of(
@@ -67,6 +68,18 @@ class UnauthenticatedAccessIT {
             "SessionManagementFilter",
             "ExceptionTranslationFilter",
             "AuthorizationFilter");
+
+    /**
+     * Every filter of the server, in the order it runs them. What stands ahead of the security chain sees a request
+     * nobody has authenticated, so a new one has to be looked at: reading a body or a parameter there costs the server
+     * memory on behalf of anyone on the network.
+     */
+    static final List<String> SERVER_FILTERS = List.of(
+            "pathParameterFilter",
+            "characterEncodingFilter",
+            "requestContextFilter",
+            "springSecurityFilterChain",
+            "Tomcat WebSocket (JSR356) Filter");
 
     @DynamicPropertySource
     static void connectAsTheApplication(DynamicPropertyRegistry registry) {
@@ -219,14 +232,89 @@ class UnauthenticatedAccessIT {
     }
 
     @Test
+    void theServerRunsOnlyTheKnownFilters() {
+        var server = (TomcatWebServer) ((WebServerApplicationContext) context).getWebServer();
+        var application = (Context) server.getTomcat().getHost().findChildren()[0];
+
+        assertThat(Arrays.stream(application.findFilterMaps()).map(FilterMap::getFilterName))
+                .containsExactlyElementsOf(SERVER_FILTERS);
+    }
+
+    /**
+     * The headers of a request whose body never comes. The refusal can only arrive if nothing ahead of the chain waits
+     * for that body; a server that reads it first waits until the socket's limit ends the test. No clock decides the
+     * result, because the body does not exist, however slow the machine is.
+     */
+    @ParameterizedTest
+    @ValueSource(strings = {"POST", "PUT", "PATCH", "DELETE"})
+    void aFormBodyIsNotReadToRefuseARequest(String method) throws Exception {
+        var answer = TestHttp.problemWithoutSendingTheBody(port, method
+                + " /v1/transfers HTTP/1.1\r\nHost: localhost\r\n"
+                + "Content-Type: application/x-www-form-urlencoded\r\nContent-Length: 1000\r\nConnection: close\r\n\r\n");
+
+        assertProblemOnTheWire(answer, ProblemType.UNAUTHENTICATED, "/v1/transfers");
+    }
+
+    /** A body that cannot be decoded is the client's problem only if something reads it, and nothing should. */
+    @ParameterizedTest
+    @ValueSource(strings = {"a=%ZZ", "a=%", "a=%FF"})
+    @ExtendWith(OutputCaptureExtension.class)
+    void aBrokenFormBodyIsNeverDecoded(String body, CapturedOutput output) throws Exception {
+        var answer = overASocket("PUT /nope HTTP/1.1\r\nHost: localhost\r\n"
+                + "Content-Type: application/x-www-form-urlencoded\r\nContent-Length: " + body.length()
+                + "\r\nConnection: close\r\n\r\n" + body);
+
+        assertProblemOnTheWire(answer, ProblemType.UNAUTHENTICATED, "/nope");
+        assertThat(output).doesNotContain(" ERROR ").doesNotContain(" WARN ");
+    }
+
+    /**
+     * A path parameter is the one part of a path the server does not decode, so a broken escape in it gets past the
+     * server and fails in the first thing that does decode it, ahead of the firewall. The same refusal the firewall gives
+     * any other path parameter, and nothing in the log, or a very short request would cost the server far more log than it
+     * cost the client to send.
+     */
+    @ParameterizedTest
+    @ValueSource(strings = {
+        "GET /v1/transfers;a=%ZZ",
+        "POST /v1/transfers;a=%",
+        "GET /nope;a=%ZZ",
+        "GET /v1;a=%ZZ/transfers",
+        "GET /;a=%FF",
+        "GET /v1/transfers;a=%ZZSYNTHETICMARK%0d%0aSYNTHETICMARK"})
+    @ExtendWith(OutputCaptureExtension.class)
+    void aPathParameterThatCannotBeDecodedIsRefusedQuietly(String requestLine, CapturedOutput output) throws Exception {
+        var answer = overASocket(requestLine + " HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n");
+
+        assertProblemOnTheWire(answer, ProblemType.BAD_REQUEST, "/");
+        assertThat(answer).doesNotContain("SYNTHETICMARK");
+        assertThat(output).doesNotContain("SYNTHETICMARK").doesNotContain(" ERROR ").doesNotContain(" WARN ")
+                .doesNotContain("\tat ");
+    }
+
+    /** The server refuses this method itself and forwards to the error page, which then sees the same broken path. */
+    @Test
+    @ExtendWith(OutputCaptureExtension.class)
+    void theErrorPageDoesNotDependOnThePathOfTheRequest(CapturedOutput output) throws Exception {
+        var answer = overASocket(
+                "TRACE /v1/transfers;a=%ZZSYNTHETICMARK HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n");
+
+        assertProblemOnTheWire(answer, ProblemType.METHOD_NOT_ALLOWED, "/");
+        assertThat(answer).doesNotContain("SYNTHETICMARK");
+        assertThat(output).doesNotContain("SYNTHETICMARK").doesNotContain(" ERROR ").doesNotContain(" WARN ")
+                .doesNotContain("\tat ");
+    }
+
+    @Test
     void aRefusalIsNeitherCachedNorSniffed() throws Exception {
         assertNeitherCachedNorSniffed(send(request("/v1/transfers")).headers());
     }
 
-    /** The firewall refuses it ahead of the rules of the chain, so it answers the same with a principal or without. */
-    @Test
-    void aRejectedUrlStillGetsAProblem() throws Exception {
-        var response = send(request("/v1/transfers;x=1"));
+    /** Refused ahead of the rules of the chain, by the filter or by its firewall, so the same with a principal or without. */
+    @ParameterizedTest
+    @ValueSource(strings = {"/v1/transfers;x=1", "/v1/transfers%0a"})
+    void aRejectedUrlStillGetsAProblem(String path) throws Exception {
+        var response = send(request(path));
 
         assertProblem(response, ProblemType.BAD_REQUEST, "/");
     }
@@ -258,6 +346,42 @@ class UnauthenticatedAccessIT {
                 .doesNotContain("Exception").doesNotContain("\tat ").doesNotContainPattern("[0-9]+\\.[0-9]+\\.[0-9]+");
     }
 
+    /** Not valid as a request for the application, so the server answers these itself, without the chain and in its HTML. */
+    @ParameterizedTest(name = "{0}, {1}")
+    @CsvSource({
+        "'CONNECT somewhere:1 HTTP/1.1', 501, ''",
+        "'GET /v1/transfers HTTP/1.1', 417, 'Expect: nonsense'",
+        "'GET /v1/transfers HTTP/3.0', 505, ''",
+        "'GET /v1/transfers HTTP/1.1', 400, 'X-Too-Large: REPEAT'"})
+    void whatTheServerAnswersItselfRevealsNothing(String requestLine, int status, String header) throws Exception {
+        var headerLine = header.replace("REPEAT", "a".repeat(9000));
+
+        var answer = overASocket(requestLine + "\r\nHost: localhost\r\nConnection: close\r\n"
+                + (headerLine.isEmpty() ? "" : headerLine + "\r\n") + "\r\n");
+
+        assertThat(answer).startsWith("HTTP/1.1 " + status + " ").containsIgnoringCase("content-type: text/html");
+        assertThat(answer).doesNotContainIgnoringCase("tomcat").doesNotContainIgnoringCase("apache")
+                .doesNotContain("Exception").doesNotContain("\tat ").doesNotContainPattern("[0-9]+\\.[0-9]+\\.[0-9]+");
+    }
+
+    /** The server keeps these from every client, ahead of the chain, so nobody finds out more here than with a principal. */
+    @ParameterizedTest
+    @ValueSource(strings = {"/WEB-INF/web.xml", "/WEB-INF", "/META-INF/MANIFEST.MF"})
+    void theFoldersTheServerProtectsAnswerThatNothingIsThere(String path) throws Exception {
+        var response = send(request(path));
+
+        assertProblem(response, ProblemType.NOT_FOUND, path);
+    }
+
+    /** It names no route, so the rule that demands a principal has nothing to apply to, and it reveals only the methods. */
+    @Test
+    void optionsForTheWholeServerIsAnsweredByTheServer() throws Exception {
+        var answer = overASocket("OPTIONS * HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n");
+
+        assertThat(answer).startsWith("HTTP/1.1 200 ").containsIgnoringCase("content-length: 0")
+                .containsIgnoringCase("allow: GET, HEAD, POST, PUT, DELETE, OPTIONS");
+    }
+
     @Test
     void aPathLongerThanTheServerReadsRevealsNothing() throws Exception {
         var response = overASocket(
@@ -268,11 +392,7 @@ class UnauthenticatedAccessIT {
     }
 
     private String overASocket(String request) throws IOException {
-        try (var socket = new Socket("127.0.0.1", port)) {
-            socket.getOutputStream().write(request.getBytes(StandardCharsets.ISO_8859_1));
-            socket.getOutputStream().flush();
-            return new String(socket.getInputStream().readAllBytes(), StandardCharsets.ISO_8859_1);
-        }
+        return TestHttp.overASocket(port, request);
     }
 
     private HttpRequest.Builder createATransfer(String path) {
@@ -287,6 +407,6 @@ class UnauthenticatedAccessIT {
     }
 
     private static HttpResponse<String> send(HttpRequest.Builder request) throws IOException, InterruptedException {
-        return CLIENT.send(request.build(), BodyHandlers.ofString());
+        return TestHttp.send(request);
     }
 }

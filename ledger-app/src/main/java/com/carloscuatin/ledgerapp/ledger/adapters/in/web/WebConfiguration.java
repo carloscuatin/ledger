@@ -2,9 +2,11 @@ package com.carloscuatin.ledgerapp.ledger.adapters.in.web;
 
 import org.springframework.boot.jackson.autoconfigure.JsonFactoryBuilderCustomizer;
 import org.springframework.boot.jackson.autoconfigure.JsonMapperBuilderCustomizer;
+import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Profile;
+import org.springframework.core.Ordered;
 import org.springframework.web.method.HandlerTypePredicate;
 import org.springframework.web.servlet.config.annotation.ApiVersionConfigurer;
 import org.springframework.web.servlet.config.annotation.PathMatchConfigurer;
@@ -13,6 +15,7 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 import com.carloscuatin.ledger.contract.v1.api.TransfersApi;
 
 import tools.jackson.core.StreamReadConstraints;
+import tools.jackson.core.StreamReadFeature;
 import tools.jackson.databind.cfg.CoercionAction;
 import tools.jackson.databind.cfg.CoercionInputShape;
 import tools.jackson.databind.type.LogicalType;
@@ -54,6 +57,25 @@ class WebConfiguration implements WebMvcConfigurer {
     JsonFactoryBuilderCustomizer boundedBody() {
         return builder -> builder
                 .streamReadConstraints(StreamReadConstraints.builder().maxDocumentLength(MAX_BODY_BYTES).build());
+    }
+
+    /**
+     * The same field twice has no single meaning: a parser that reads in order keeps the last, and whatever looked at the
+     * body before this application, like a gateway or a signature, may have believed the first. This names only reading:
+     * writing has its own feature of the same name, which stays off, because what this application writes comes from
+     * records, which cannot repeat a field.
+     */
+    @Bean
+    JsonFactoryBuilderCustomizer noRepeatedField() {
+        return builder -> builder.enable(StreamReadFeature.STRICT_DUPLICATE_DETECTION);
+    }
+
+    /** First of all, because what it protects from is what the filters ahead of the security chain do with a path. */
+    @Bean
+    FilterRegistrationBean<PathParameterFilter> pathParameterFilter() {
+        var registration = new FilterRegistrationBean<>(new PathParameterFilter());
+        registration.setOrder(Ordered.HIGHEST_PRECEDENCE);
+        return registration;
     }
 
     /**
